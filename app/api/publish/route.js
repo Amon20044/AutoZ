@@ -29,6 +29,17 @@ const MULTIPART_MIN_PART_BYTES = 8 * 1024 * 1024
 const MULTIPART_MAX_PARTS = 10000
 const MULTIPART_CONCURRENCY = 3
 
+/**
+ * Build the public download URL for a Supabase Storage object.
+ * S3_URL is the S3-compatible endpoint (for AWS SDK uploads) and must NOT be
+ * used for public URLs. Public URLs use the Supabase REST format:
+ *   {SUPABASE_URL}/storage/v1/object/public/{bucket}/{key}
+ */
+function getPublicStorageUrl(key) {
+  const supabaseUrl = (process.env.NEXT_PUBLIC_SUPABASE_URL || '').replace(/\/+$/, '')
+  return `${supabaseUrl}/storage/v1/object/public/${MODELS_BUCKET}/${key}`
+}
+
 export async function POST(request) {
   try {
     if (!prisma) {
@@ -82,7 +93,7 @@ export async function POST(request) {
       contentType: getContentType(modelFile, modelPath),
     })
 
-    const modelUrl = `${process.env.S3_URL}/object/public/${MODELS_BUCKET}/${modelKey}`
+    const modelUrl = getPublicStorageUrl(modelKey)
 
     const runtimeAssets = []
     for (let i = 0; i < resourceFiles.length; i++) {
@@ -104,7 +115,7 @@ export async function POST(request) {
         originalName: resourceFile.name,
         path: resourcePath,
         key: resourceKey,
-        url: `${process.env.S3_URL}/object/public/${MODELS_BUCKET}/${resourceKey}`,
+        url: getPublicStorageUrl(resourceKey),
         size: resourceFile.size,
         contentType: resourceContentType,
       })

@@ -93,8 +93,35 @@ const mergeSceneConfigFromSnapshot = (snapshot = {}) => ({
   postprocessing: { ...DEFAULT_CONFIG.postprocessing, ...(snapshot.postprocessing ?? {}) },
 })
 
+/**
+ * Fix legacy snapshot URLs that were stored using the S3-compatible endpoint
+ * (e.g. https://xxx.storage.supabase.co/storage/v1/s3/object/public/...)
+ * Rewrite them to the correct Supabase Storage REST public URL format:
+ *   https://xxx.supabase.co/storage/v1/object/public/...
+ */
+function normalizeStorageUrl(url) {
+  try {
+    const parsed = new URL(url)
+    // Detect S3-endpoint URLs: hostname = *.storage.supabase.co, path includes /s3/
+    if (
+      parsed.hostname.endsWith('.storage.supabase.co') &&
+      parsed.pathname.includes('/storage/v1/s3/')
+    ) {
+      // Rewrite hostname: xxx.storage.supabase.co → xxx.supabase.co
+      parsed.hostname = parsed.hostname.replace('.storage.supabase.co', '.supabase.co')
+      // Remove /s3 segment from path
+      parsed.pathname = parsed.pathname.replace('/storage/v1/s3/', '/storage/v1/')
+      return parsed.toString()
+    }
+  } catch {
+    // If URL parsing fails, return as-is and let fetch handle the error
+  }
+  return url
+}
+
 async function fetchSnapshotFileEntry({ url, path, fileName }) {
-  const res = await fetch(url)
+  const fixedUrl = normalizeStorageUrl(url)
+  const res = await fetch(fixedUrl)
   if (!res.ok) throw new Error(`Could not load ${fileName || path || 'asset'}`)
 
   const blob = await res.blob()
