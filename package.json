@@ -12,6 +12,7 @@
   "scripts": {
     "lint": "next lint --fix --dir app",
     "dev": "next dev",
+    "prebuild": "prisma generate",
     "build": "next build",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",

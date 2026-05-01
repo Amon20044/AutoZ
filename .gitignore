@@ -42,4 +42,7 @@ report.*.json
 # .vscode Debugging
 .vscode/*-debug-profile
 
+/.prisma
+/prisma/generated
 /src/generated/prisma
+/src/config/prisma.js
