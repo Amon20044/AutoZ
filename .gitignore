@@ -45,4 +45,3 @@ report.*.json
 /.prisma
 /prisma/generated
 /src/generated/prisma
-/src/config/prisma.js
