@@ -1,0 +1,83 @@
+/* Frame viewer — minimal, clean, no chrome */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap');
+
+.frame-root {
+  position: fixed;
+  inset: 0;
+  background: #0a0a0f;
+  overflow: hidden;
+  font-family: 'Inter', system-ui, sans-serif;
+}
+
+.frame-loading {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  color: #64748b;
+  font-size: 13px;
+  z-index: 100;
+}
+
+.frame-spinner {
+  width: 28px;
+  height: 28px;
+  border: 2.5px solid rgba(99, 102, 241, 0.15);
+  border-top-color: #6366f1;
+  border-radius: 50%;
+  animation: frameSpin 0.8s linear infinite;
+}
+
+@keyframes frameSpin { to { transform: rotate(360deg); } }
+
+.frame-error {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #f87171;
+  font-size: 14px;
+  text-align: center;
+  padding: 32px;
+}
+
+/* Watermark — bottom right */
+.frame-watermark {
+  position: absolute;
+  bottom: 10px;
+  right: 12px;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 10px 4px 8px;
+  background: rgba(10, 10, 20, 0.7);
+  backdrop-filter: blur(8px);
+  border: 1px solid rgba(255,255,255,0.06);
+  border-radius: 6px;
+  font-size: 10px;
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.45);
+  text-decoration: none;
+  transition: all 200ms ease;
+  z-index: 50;
+  pointer-events: auto;
+  letter-spacing: 0.02em;
+}
+
+.frame-watermark:hover {
+  color: rgba(255, 255, 255, 0.75);
+  background: rgba(10, 10, 20, 0.85);
+  border-color: rgba(99, 102, 241, 0.3);
+}
+
+.frame-watermark-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: #6366f1;
+  box-shadow: 0 0 6px rgba(99, 102, 241, 0.5);
+}
