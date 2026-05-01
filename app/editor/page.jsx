@@ -79,44 +79,59 @@ const isTextureFile = (file) => {
 }
 
 /**
- * Upload a file directly to S3 via a presigned PUT URL.
- * Uses XMLHttpRequest for upload progress tracking.
+ * Stream-upload a large file to our /api/publish/upload proxy using XHR.
+ * The proxy pipes the raw body directly into an S3 multipart upload — no
+ * presigned URL needed, no CORS issue, no full-file buffering on server.
  *
- * @param {string} presignedUrl - The presigned PUT URL from the API.
- * @param {File} file - The file to upload.
- * @param {string} [fileName] - Display name for error messages.
- * @returns {Promise<void>}
+ * @param {File}   file           - The model file (.glb/.gltf)
+ * @param {string} slug           - Publish ID used to build the storage path
+ * @param {string} [onProgress]   - Optional progress callback (pct 0-100)
+ * @returns {Promise<{ publicUrl: string, key: string }>}
  */
-function uploadFileToPresignedUrl(presignedUrl, file, fileName) {
+function uploadModelStreaming(file, slug, onProgress) {
   return new Promise((resolve, reject) => {
+    const params = new URLSearchParams({
+      slug,
+      fileName: file.name,
+      fileSize: String(file.size),
+      contentType: file.type || 'model/gltf-binary',
+    })
+
     const xhr = new XMLHttpRequest()
-    xhr.open('PUT', presignedUrl, true)
-    xhr.setRequestHeader('Content-Type', file.type || 'application/octet-stream')
+    xhr.open('POST', `/api/publish/upload?${params}`, true)
+    xhr.setRequestHeader('Content-Type', file.type || 'model/gltf-binary')
 
     xhr.upload.addEventListener('progress', (e) => {
-      if (e.lengthComputable) {
+      if (e.lengthComputable && onProgress) {
         const pct = Math.round((e.loaded / e.total) * 100)
-        console.log(`[Upload] ${fileName || file.name}: ${pct}% (${(e.loaded / 1024 / 1024).toFixed(1)} / ${(e.total / 1024 / 1024).toFixed(1)} MB)`)
+        onProgress(pct)
+        console.log(`[Upload] ${file.name}: ${pct}% (${(e.loaded / 1024 / 1024).toFixed(1)} / ${(e.total / 1024 / 1024).toFixed(1)} MB)`)
       }
     })
 
     xhr.addEventListener('load', () => {
       if (xhr.status >= 200 && xhr.status < 300) {
-        resolve()
+        try {
+          resolve(JSON.parse(xhr.responseText))
+        } catch {
+          reject(new Error('Upload succeeded but server returned invalid JSON.'))
+        }
       } else {
-        reject(new Error(
-          `Failed to upload ${fileName || file.name} to storage (HTTP ${xhr.status}). ` +
-          'The file may be too large for the storage bucket limit, or the upload URL expired.',
-        ))
+        let errMsg = `Upload failed (HTTP ${xhr.status}).`
+        try {
+          const body = JSON.parse(xhr.responseText)
+          if (body.error) errMsg = body.error
+        } catch { /* ignore */ }
+        reject(new Error(errMsg))
       }
     })
 
     xhr.addEventListener('error', () => {
-      reject(new Error(`Network error while uploading ${fileName || file.name}. Check your connection and try again.`))
+      reject(new Error(`Network error uploading ${file.name}. Check your connection.`))
     })
 
     xhr.addEventListener('abort', () => {
-      reject(new Error(`Upload of ${fileName || file.name} was aborted.`))
+      reject(new Error(`Upload of ${file.name} was aborted.`))
     })
 
     xhr.send(file)
@@ -395,7 +410,10 @@ export default function EditorPage({ initialPublishId = '' }) {
   }, [])
 
   // ─── Publish ────────────────────────────────────────────────────────────
-  // Threshold for switching to presigned URL upload (50 MB)
+  // All files go through the streaming upload proxy — no presigned URL needed.
+  // Small files (<50MB): included in the publish formData directly.
+  // Large files (≥50MB): streamed via /api/publish/upload, then publish API
+  //   receives model URL + key metadata instead of the file.
   const DIRECT_UPLOAD_LIMIT = 50 * 1024 * 1024
 
   const handlePublish = useCallback(async () => {
@@ -425,25 +443,19 @@ export default function EditorPage({ initialPublishId = '' }) {
       let modelUploadMeta = null // { modelUrl, modelKey, modelFileName, modelFileSize }
 
       if (isLargeFile) {
-        // ─── Large file: presigned URL upload directly to S3 ────────
-        const urlRes = await fetch('/api/publish/upload-url', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            slug: activePublishId,
-            fileName: modelPath,
-            contentType: modelFile.type || 'model/gltf-binary',
-          }),
-        })
-        const urlJson = await urlRes.json()
-        if (!urlRes.ok) throw new Error(urlJson.error || 'Failed to get upload URL')
-
-        // Upload directly to S3 using the presigned PUT URL
-        await uploadFileToPresignedUrl(urlJson.uploadUrl, modelFile, urlJson.path)
+        // ─── Large file: stream directly through our upload proxy ────
+        // XHR body = raw binary, no multipart envelope.
+        // Server pipes it into S3 multipart without buffering whole file.
+        const uploadResult = await uploadModelStreaming(
+          modelFile,
+          activePublishId,
+          (_pct) => { /* progress tracked in console */ },
+        )
+        if (!uploadResult?.publicUrl) throw new Error('Upload proxy returned no URL.')
 
         modelUploadMeta = {
-          modelUrl: urlJson.publicUrl,
-          modelKey: urlJson.key,
+          modelUrl: uploadResult.publicUrl,
+          modelKey: uploadResult.key,
           modelFileName: modelFile.name,
           modelFileSize: String(modelFile.size),
         }
@@ -460,16 +472,36 @@ export default function EditorPage({ initialPublishId = '' }) {
       // Step 3: Finalizing scene (building formData + calling publish API)
       setPublishProgress(buildPublishProgress(3))
 
+      // Build the full scene config including normalization data.
+      // combinedScale, centerOffset, groundOffset, rotation are the exact values
+      // used by applyNormalization() — storing them lets /frame replicate it exactly.
+      const normResult = importResult.normResult ?? {}
+      const configPayload = {
+        ...sceneConfig,
+        parts: importResult.registry?.serialize?.() ?? [],
+        import: {
+          // Fields used directly by applyNormalization in FrameCanvas:
+          combinedScale:  normResult.combinedScale  ?? 1,
+          centerOffset:   normResult.centerOffset   ?? [0, 0],    // [cx, cz]
+          groundOffset:   normResult.groundOffset   ?? 0,
+          rotation:       normResult.rotation       ?? { quaternion: [0,0,0,1] },
+          // Additional metadata for reference:
+          scaleFactor:    normResult.scaleFactor    ?? 1,
+          unitScale:      normResult.unitScale      ?? 1,
+          dimensions:     normResult.dimensions     ?? {},
+        },
+      }
+
       const formData = new FormData()
 
       if (isLargeFile && modelUploadMeta) {
-        // Large file path: send model metadata instead of file
+        // Large file path: model already on S3 — send metadata only
         formData.append('modelUrl', modelUploadMeta.modelUrl)
         formData.append('modelKey', modelUploadMeta.modelKey)
         formData.append('modelFileName', modelUploadMeta.modelFileName)
         formData.append('modelFileSize', modelUploadMeta.modelFileSize)
       } else {
-        // Small file path: send file directly
+        // Small file path: send file directly via formData
         formData.append('model', modelFile)
         formData.append('modelPath', modelPath)
       }
@@ -477,14 +509,7 @@ export default function EditorPage({ initialPublishId = '' }) {
       formData.append('publishId', activePublishId)
       formData.append('updateExisting', isEditingExistingPublish ? 'true' : 'false')
       formData.append('name', importResult.file?.name?.replace(/\.\w+$/, '') || 'Untitled')
-      formData.append('config', JSON.stringify({
-        ...sceneConfig,
-        parts: importResult.registry?.serialize?.() ?? [],
-        import: {
-          sourceUnit: importResult.normResult?.sourceUnit,
-          sourceForward: importResult.normResult?.sourceForward,
-        },
-      }))
+      formData.append('config', JSON.stringify(configPayload))
       formData.append('resourcePaths', JSON.stringify(resourcePaths))
       resourceEntries.forEach((entry) => {
         formData.append('resources', entry.file)
@@ -507,7 +532,6 @@ export default function EditorPage({ initialPublishId = '' }) {
         editorUrl: json.editorUrl,
         embedCode: json.embedCode,
       })
-      // show a short toast confirming publish and copy-ready URL
       setToast(`Published: ${json.frameUrl}`)
       setTimeout(() => setToast(null), 6000)
     } catch (err) {
