@@ -293,6 +293,10 @@ export async function runImportPipeline(droppedFiles, importOptions = {}) {
     const sceneClone = gltf.scene.clone()
     const normalizedRoot = applyNormalization(sceneClone, normResult)
 
+    // Force full world matrix update so all meshes have correct world positions
+    // BEFORE part detection and pivot computation runs
+    normalizedRoot.updateWorldMatrix(true, true)
+
     const { registry, meshIndex, report } = buildPartRegistry(
       normalizedRoot,
       { parts: importOptions.parts ?? [] },

@@ -31,13 +31,7 @@ import {
 import { s3Client, MODELS_BUCKET } from '@/config/s3'
 
 export const dynamic = 'force-dynamic'
-// Remove the default 4 MB body-size limit so Next.js doesn't buffer the request.
-export const config = {
-  api: {
-    bodyParser: false,
-    responseLimit: false,
-  },
-}
+export const runtime = 'nodejs'
 
 const PART_SIZE = 8 * 1024 * 1024        // 8 MB per part (S3 minimum is 5 MB)
 const MAX_PARTS = 10_000

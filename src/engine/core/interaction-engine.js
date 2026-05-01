@@ -1,73 +1,59 @@
 /**
  * @module engine/core/interaction-engine
- * Config-driven interaction state machine.
- *
- * Handles per-part interactions each frame:
- *   - hinge_open_close  → pivot-based Rodrigues rotation w/ exp damping
- *   - toggle            → emissive intensity lerp
- *   - blink             → hard/smooth blink formula
- *   - color_change      → Color lerp
- *   - spin              → continuous rotation
- *   - fold              → mirror fold (same as hinge with own defaults)
- *   - extend            → spoiler extend (same as hinge)
- *   - tint              → opacity/transmission change
- *   - none              → no runtime effect
+ * Per-frame interaction state machine for part entries.
  */
 
 import * as THREE from 'three'
-import { damp, SmoothValue, SmoothColor, blinkHard, blinkSmooth } from '../math/animation.js'
+import { damp, SmoothColor, blinkHard, blinkSmooth } from '../math/animation.js'
 
-// ─── Interaction Handlers ────────────────────────────────────────────────────
+function getAnimatedObjects(part) {
+  return part.controlObjects?.length ? part.controlObjects : part.meshObjects
+}
 
-/**
- * Hinge open/close — Rodrigues pivot rotation with exponential damping.
- * Applies to: doors, bonnet, trunk, caps, mirrors, spoiler.
- *
- * @param {import('./part-registry.js').PartEntry} part
- * @param {number} dt - Frame delta time
- */
-export function updateHinge(part, dt) {
-  if (!part.pivot || !part.axis || part.meshObjects.length === 0) return
+function applyWorldTransform(object, worldPosition, worldQuaternion) {
+  if (object.parent) {
+    object.parent.updateWorldMatrix(true, false)
+    object.position.copy(object.parent.worldToLocal(worldPosition.clone()))
 
-  const targetAngle = part.targetState === 'open' ? part.openAngle : part.closeAngle
-
-  // Smooth current angle toward target
-  part._currentAngle = damp(part._currentAngle ?? part.closeAngle, targetAngle, part.lambda, dt)
-
-  // Build rotation quaternion around hinge axis
-  const q = new THREE.Quaternion().setFromAxisAngle(part.axis, part._currentAngle)
-
-  // Apply to each mesh: translate to pivot, rotate, translate back
-  for (let i = 0; i < part.meshObjects.length; i++) {
-    const mesh = part.meshObjects[i]
-    const orig = part._originalWorldPositions?.[i]
-    if (!orig) continue
-
-    // p' = P + R_a(θ)(p - P)
-    const offset = new THREE.Vector3().subVectors(orig, part.pivot)
-    const rotated = offset.applyQuaternion(q)
-    mesh.position.copy(part.pivot).add(rotated)
-
-    // Also rotate the mesh's own orientation
-    const origQ = part._originalWorldQuaternions?.[i]
-    if (origQ) mesh.quaternion.multiplyQuaternions(q, origQ)
+    const parentWQ = new THREE.Quaternion()
+    object.parent.getWorldQuaternion(parentWQ)
+    object.quaternion.multiplyQuaternions(parentWQ.invert(), worldQuaternion)
+  } else {
+    object.position.copy(worldPosition)
+    object.quaternion.copy(worldQuaternion)
   }
 }
 
-/**
- * Emissive light toggle (headlights, taillights, DRLs).
- * @param {import('./part-registry.js').PartEntry} part
- * @param {number} dt
- * @param {number} time - Elapsed time for blink
- */
-export function updateToggle(part, dt, time = 0) {
+export function updateHinge(part, dt) {
+  const objects = getAnimatedObjects(part)
+  if (!part.pivot || !part.axis || objects.length === 0) return
+
+  const targetAngle = part.targetState === 'open' ? part.openAngle : part.closeAngle
+  part._currentAngle = damp(part._currentAngle ?? part.closeAngle, targetAngle, part.lambda, dt)
+
+  const q = new THREE.Quaternion().setFromAxisAngle(part.axis, part._currentAngle)
+
+  for (let i = 0; i < objects.length; i++) {
+    const object = objects[i]
+    const origWP = part._originalWorldPositions?.[i]
+    const origWQ = part._originalWorldQuaternions?.[i]
+    if (!origWP || !origWQ) continue
+
+    const offset = new THREE.Vector3().subVectors(origWP, part.pivot)
+    const rotated = offset.applyQuaternion(q)
+    const newWorldPos = new THREE.Vector3().copy(part.pivot).add(rotated)
+    const newWorldQuat = new THREE.Quaternion().multiplyQuaternions(q, origWQ)
+    applyWorldTransform(object, newWorldPos, newWorldQuat)
+  }
+}
+
+export function updateToggle(part, dt) {
   if (part.meshObjects.length === 0) return
 
   const matConfig = part.material
   const isOn = part.targetState === 'on'
   const targetIntensity = isOn ? (matConfig?.on?.emissiveIntensity ?? 4.5) : 0
   const targetColor = isOn ? (matConfig?.on?.emissiveColor ?? '#fff4cc') : '#000000'
-
   part._emissiveIntensity = damp(part._emissiveIntensity ?? 0, targetIntensity, part.lambda, dt)
 
   for (const mesh of part.meshObjects) {
@@ -76,23 +62,17 @@ export function updateToggle(part, dt, time = 0) {
       if (mat.emissive !== undefined) {
         mat.emissive.lerp(new THREE.Color(targetColor), 1 - Math.exp(-part.lambda * dt))
         mat.emissiveIntensity = part._emissiveIntensity
-        mat.needsUpdate = false // intensity change doesn't need full recompile
+        mat.needsUpdate = false
       }
     }
   }
 }
 
-/**
- * Blink interaction (indicators).
- * @param {import('./part-registry.js').PartEntry} part
- * @param {number} time - Elapsed scene time
- */
 export function updateBlink(part, time) {
   if (part.targetState !== 'on' || part.meshObjects.length === 0) {
-    // Off — kill emissive
     for (const mesh of part.meshObjects) {
       const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material]
-      for (const mat of mats) { if (mat.emissive) mat.emissiveIntensity = 0 }
+      for (const mat of mats) if (mat.emissive) mat.emissiveIntensity = 0
     }
     return
   }
@@ -104,53 +84,48 @@ export function updateBlink(part, time) {
 
   for (const mesh of part.meshObjects) {
     const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material]
-    for (const mat of mats) { if (mat.emissive !== undefined) mat.emissiveIntensity = intensity }
+    for (const mat of mats) if (mat.emissive !== undefined) mat.emissiveIntensity = intensity
   }
 }
 
-/**
- * Body color change — lerps baseColor on MeshStandardMaterial.
- * @param {import('./part-registry.js').PartEntry} part
- * @param {string} targetColor - Hex color string
- * @param {number} dt
- */
 export function updateColorChange(part, targetColor, dt) {
   if (!targetColor || part.meshObjects.length === 0) return
 
   part._colorSmoother = part._colorSmoother ?? new SmoothColor(targetColor, part.lambda)
   part._colorSmoother.set(targetColor)
-  const c = part._colorSmoother.update(dt)
+  const color = part._colorSmoother.update(dt)
 
   for (const mesh of part.meshObjects) {
     const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material]
     for (const mat of mats) {
-      if (mat.color) mat.color.copy(c)
+      if (mat.color) mat.color.copy(color)
     }
   }
 }
 
-/**
- * Wheel spin — continuous rotation on the wheel axis.
- * @param {import('./part-registry.js').PartEntry} part
- * @param {number} dt
- * @param {number} speed - rad/s, positive = forward
- */
 export function updateSpin(part, dt, speed = 0) {
-  if (!part.axis || part.meshObjects.length === 0) return
-  const dAngle = speed * dt
-  for (const mesh of part.meshObjects) {
-    if (part.axis.x > 0.5) mesh.rotation.x += dAngle
-    else if (part.axis.y > 0.5) mesh.rotation.y += dAngle
-    else mesh.rotation.z += dAngle
+  const objects = getAnimatedObjects(part)
+  const axis = part.spinAxis || part.axis
+  if (!axis || objects.length === 0 || speed === 0) return
+
+  part._spinAngle = (part._spinAngle ?? 0) + speed * dt
+  const q = new THREE.Quaternion().setFromAxisAngle(axis, part._spinAngle)
+
+  for (let i = 0; i < objects.length; i++) {
+    const object = objects[i]
+    const origWP = part._originalWorldPositions?.[i]
+    const origWQ = part._originalWorldQuaternions?.[i]
+    if (!origWP || !origWQ) continue
+
+    const pivot = part.pivot || part.origin || origWP
+    const offset = new THREE.Vector3().subVectors(origWP, pivot)
+    const rotated = offset.applyQuaternion(q)
+    const newWorldPos = new THREE.Vector3().copy(pivot).add(rotated)
+    const newWorldQuat = new THREE.Quaternion().multiplyQuaternions(q, origWQ)
+    applyWorldTransform(object, newWorldPos, newWorldQuat)
   }
 }
 
-/**
- * Tint — opacity / transmission update for glass.
- * @param {import('./part-registry.js').PartEntry} part
- * @param {number} targetOpacity
- * @param {number} dt
- */
 export function updateTint(part, targetOpacity, dt) {
   if (part.meshObjects.length === 0) return
   part._opacity = damp(part._opacity ?? 0.45, targetOpacity, part.lambda, dt)
@@ -163,46 +138,21 @@ export function updateTint(part, targetOpacity, dt) {
   }
 }
 
-// ─── Interaction Engine ──────────────────────────────────────────────────────
-
-/**
- * The central per-frame update engine.
- * Call update(registry, dt, time) from your useFrame loop.
- */
 export class InteractionEngine {
   constructor() {
-    /** @type {Map<string, { type: string, payload: any }>} partId → pending command */
     this._commands = new Map()
-    /** @type {Map<string, string>} partId → active variant/color */
     this._activeVariants = new Map()
-    /** @type {Set<string>} partId → currently animating */
     this._animating = new Set()
   }
 
-  // ─── Commands ─────────────────────────────────────────────────────────────
-
-  /** Open a hinge part */
   open(partId) { this._commands.set(partId, { type: 'setState', payload: 'open' }) }
-  /** Close a hinge part */
   close(partId) { this._commands.set(partId, { type: 'setState', payload: 'closed' }) }
-  /** Toggle open/closed or on/off */
   toggle(partId) { this._commands.set(partId, { type: 'toggle', payload: null }) }
-  /** Set a specific color variant */
   setColor(partId, hex) { this._commands.set(partId, { type: 'color', payload: hex }) }
-  /** Set arbitrary state */
   setState(partId, state) { this._commands.set(partId, { type: 'setState', payload: state }) }
-  /** Set wheel spin speed (rad/s) */
   setSpin(partId, speed) { this._commands.set(partId, { type: 'spin', payload: speed }) }
 
-  // ─── Per-Frame Update ─────────────────────────────────────────────────────
-
-  /**
-   * @param {import('./part-registry.js').PartRegistry} registry
-   * @param {number} dt - Frame delta time (seconds)
-   * @param {number} time - Elapsed time (seconds)
-   */
   update(registry, dt, time) {
-    // 1. Apply pending commands
     for (const [partId, cmd] of this._commands) {
       const part = registry.get(partId)
       if (!part) continue
@@ -210,7 +160,6 @@ export class InteractionEngine {
     }
     this._commands.clear()
 
-    // 2. Run per-part animation
     for (const part of registry.all) {
       this._updatePart(part, dt, time)
     }
@@ -220,32 +169,43 @@ export class InteractionEngine {
     if (cmd.type === 'setState') {
       part.targetState = cmd.payload
     } else if (cmd.type === 'toggle') {
+      if (part.interactions?.[0] === 'spin') {
+        const isOn = part.targetState === 'on' || (part._spinSpeed ?? 0) !== 0
+        part.targetState = isOn ? 'off' : 'on'
+        part._spinSpeed = isOn ? 0 : (part.spinSpeed ?? 5.5)
+        return
+      }
       const toggleMap = { open: 'closed', closed: 'open', on: 'off', off: 'on', default: 'default' }
       part.targetState = toggleMap[part.currentState] ?? part.currentState
     } else if (cmd.type === 'color') {
       part._pendingColor = cmd.payload
     } else if (cmd.type === 'spin') {
       part._spinSpeed = cmd.payload
+      part.targetState = cmd.payload ? 'on' : 'off'
     }
   }
 
-  _updatePart(part, dt, time) {
-    const interaction = part.interactions[0] // primary interaction
+  _ensureOriginalTransforms(part) {
+    const animatedObjects = getAnimatedObjects(part)
+    if (part._originalWorldPositions || animatedObjects.length === 0) return
 
-    // Store original world positions on first run (needed for hinge math)
-    if (!part._originalWorldPositions && part.meshObjects.length > 0) {
-      part._originalWorldPositions = part.meshObjects.map((m) => {
-        const wp = new THREE.Vector3()
-        m.getWorldPosition(wp)
-        return wp.clone()
-      })
-      part._originalWorldQuaternions = part.meshObjects.map((m) => {
-        const wq = new THREE.Quaternion()
-        m.getWorldQuaternion(wq)
-        return wq.clone()
-      })
-      part._currentAngle = part.closeAngle
-    }
+    animatedObjects.forEach((object) => object.updateWorldMatrix(true, true))
+    part._originalWorldPositions = animatedObjects.map((object) => {
+      const wp = new THREE.Vector3()
+      object.getWorldPosition(wp)
+      return wp.clone()
+    })
+    part._originalWorldQuaternions = animatedObjects.map((object) => {
+      const wq = new THREE.Quaternion()
+      object.getWorldQuaternion(wq)
+      return wq.clone()
+    })
+    part._currentAngle = part.closeAngle
+  }
+
+  _updatePart(part, dt, time) {
+    const interaction = part.interactions[0]
+    this._ensureOriginalTransforms(part)
 
     switch (interaction) {
       case 'hinge_open_close':
@@ -255,7 +215,7 @@ export class InteractionEngine {
         updateHinge(part, dt)
         break
       case 'toggle':
-        updateToggle(part, dt, time)
+        updateToggle(part, dt)
         break
       case 'blink':
         updateBlink(part, time)
@@ -264,7 +224,7 @@ export class InteractionEngine {
         if (part._pendingColor) updateColorChange(part, part._pendingColor, dt)
         break
       case 'spin':
-        updateSpin(part, dt, part._spinSpeed ?? 0)
+        updateSpin(part, dt, part._spinSpeed ?? (part.targetState === 'on' ? part.spinSpeed ?? 5.5 : 0))
         break
       case 'tint':
         if (part._pendingOpacity !== undefined) updateTint(part, part._pendingOpacity, dt)
@@ -273,10 +233,12 @@ export class InteractionEngine {
         break
     }
 
-    // Sync currentState when animation is settled
-    const settled = part._currentAngle !== undefined
-      ? Math.abs(part._currentAngle - (part.targetState === 'open' ? part.openAngle : part.closeAngle)) < 0.002
-      : true
+    const settled = interaction === 'spin'
+      ? true
+      : part._currentAngle !== undefined
+        ? Math.abs(part._currentAngle - (part.targetState === 'open' ? part.openAngle : part.closeAngle)) < 0.002
+        : true
+
     if (settled) part.currentState = part.targetState
   }
 }

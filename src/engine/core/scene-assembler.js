@@ -60,13 +60,17 @@ export class AutoZEngine {
     this._camera = camera
 
     // Step 6: Apply normalization
-    const norm = snapshot.import?.normalization
+    const importConfig = snapshot.import
+    const norm = importConfig?.normalization ?? (importConfig?.combinedScale ? importConfig : null)
     if (norm) {
       this._modelRoot = applyNormalization(gltfScene, norm)
     } else {
       this._modelRoot = gltfScene
     }
     threeScene.add(this._modelRoot)
+
+    // Force full world matrix update after adding to scene + normalization
+    this._modelRoot.updateWorldMatrix(true, true)
 
     // Step 7–8: Index meshes, apply materials
     const { registry, meshIndex, report } = buildPartRegistry(
@@ -141,6 +145,31 @@ export class AutoZEngine {
   setColor(partId, hex) { this.interaction.setColor(partId, hex) }
   /** @param {string} partId @param {'open'|'closed'|'on'|'off'} state */
   setState(partId, state) { this.interaction.setState(partId, state) }
+  /** @param {string} partId @param {number} speed */
+  setSpin(partId, speed) { this.interaction.setSpin(partId, speed) }
+
+  toggleLights(forceState = null) {
+    if (!this.registry) return false
+    const lights = this.registry.lights
+    if (lights.length === 0) return false
+    const shouldTurnOn = forceState ?? lights.some((part) => part.targetState !== 'on')
+    for (const part of lights) {
+      this.interaction.setState(part.id, shouldTurnOn ? 'on' : 'off')
+    }
+    return shouldTurnOn
+  }
+
+  setWheelSpin(enabledOrSpeed = true, speed = 5.5) {
+    if (!this.registry) return false
+    const parts = this.registry.wheelSpinParts
+    if (parts.length === 0) return false
+    const enabled = typeof enabledOrSpeed === 'number' ? enabledOrSpeed !== 0 : !!enabledOrSpeed
+    const spinSpeed = typeof enabledOrSpeed === 'number' ? enabledOrSpeed : speed
+    for (const part of parts) {
+      this.interaction.setSpin(part.id, enabled ? spinSpeed : 0)
+    }
+    return enabled
+  }
 
   /**
    * Handle raycaster hit — toggle or open the clicked part.
@@ -169,22 +198,30 @@ export class AutoZEngine {
   // ─── Lighting ────────────────────────────────────────────────────────────
 
   _applyLighting(lightingConfig) {
-    if (!lightingConfig || !this._scene) return
+    if (!this._scene) return
+    const config = lightingConfig || {
+      ambient: { enabled: true, color: '#ffffff', intensity: 0.35 },
+      lights: [
+        { type: 'directional', position: [4, 6, -4], intensity: 2.2, color: '#ffffff', castShadow: true },
+        { type: 'directional', position: [-4, 3, 3], intensity: 0.8, color: '#dbeafe' },
+        { type: 'directional', position: [0, 4, 6], intensity: 1.1, color: '#ffffff' },
+      ],
+    }
 
     // Clear previous engine-managed lights
     for (const l of this._lights) this._scene.remove(l)
     this._lights = []
 
-    if (lightingConfig.ambient?.enabled) {
+    if (config.ambient?.enabled) {
       const al = new THREE.AmbientLight(
-        lightingConfig.ambient.color ?? '#ffffff',
-        lightingConfig.ambient.intensity ?? 0.35,
+        config.ambient.color ?? '#ffffff',
+        config.ambient.intensity ?? 0.35,
       )
       this._scene.add(al)
       this._lights.push(al)
     }
 
-    for (const lc of (lightingConfig.lights ?? [])) {
+    for (const lc of (config.lights ?? [])) {
       let light
       if (lc.type === 'directional') {
         light = new THREE.DirectionalLight(lc.color ?? '#ffffff', lc.intensity ?? 1)
