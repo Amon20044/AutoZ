@@ -1,42 +1,26 @@
 /**
  * POST /api/publish/upload
  *
- * Streaming model upload proxy.
+ * Chunked model upload proxy for large GLB files.
  *
- * The client sends the raw model binary as the request body
- * (Content-Type: model/gltf-binary or application/octet-stream).
- * We pipe it directly into an S3 multipart upload WITHOUT buffering
- * the entire file in Node.js memory.
+ * The browser sends one Vercel-safe 3 MB binary request per file slice. Each
+ * slice is stored as a separate object under models/{slug}/{fileName}.part-000, then the browser
+ * calls this route once more with mode=manifest to write models/{slug}/manifest.json.
  *
- * Query params:
- *   slug        - publish ID (e.g. az-b9af07e175)
- *   fileName    - original file name (e.g. lamborghini.glb)
- *   fileSize    - total byte size (for the response / logging)
- *   contentType - MIME type (optional, defaults to model/gltf-binary)
- *
- * Response (JSON):
- *   { publicUrl, key, size }
- *
- * This avoids both the CORS limitation of presigned PUT URLs
- * and the memory exhaustion of `request.formData()` for large files.
+ * Three.js cannot load the split parts directly; the frame/editor client fetches
+ * the manifest, downloads the parts, rebuilds one Blob, and loads that blob URL.
  */
 
 import { NextResponse } from 'next/server'
-import {
-  AbortMultipartUploadCommand,
-  CompleteMultipartUploadCommand,
-  CreateMultipartUploadCommand,
-  UploadPartCommand,
-} from '@aws-sdk/client-s3'
+import { PutObjectCommand } from '@aws-sdk/client-s3'
 import { s3Client, MODELS_BUCKET } from '@/config/s3'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
 
-const PART_SIZE = 8 * 1024 * 1024        // 8 MB per part (S3 minimum is 5 MB)
-const MAX_PARTS = 10_000
-const PART_CONCURRENCY = 3
-const CACHE_CONTROL = 'public, max-age=31536000, immutable'
+const CHUNK_SIZE = 3 * 1024 * 1024
+const CACHE_CONTROL_CHUNK = 'no-cache'
+const CACHE_CONTROL_MANIFEST = 'no-cache'
 
 function getPublicStorageUrl(key) {
   const base = (process.env.NEXT_PUBLIC_SUPABASE_URL || '').replace(/\/+$/, '')
@@ -62,170 +46,149 @@ function guessMime(path, hint) {
   )
 }
 
+function getPartName(safePath, partIndex) {
+  return `${safePath}.part-${String(partIndex).padStart(3, '0')}`
+}
+
+async function readRequestBuffer(request, maxBytes) {
+  if (!request.body) return Buffer.alloc(0)
+
+  const reader = request.body.getReader()
+  const chunks = []
+  let total = 0
+
+  while (true) {
+    const { value, done } = await reader.read()
+    if (done) break
+
+    total += value.byteLength
+    if (total > maxBytes) {
+      throw new Error(`Chunk exceeded ${(maxBytes / 1024 / 1024).toFixed(0)} MB upload limit.`)
+    }
+
+    chunks.push(Buffer.from(value.buffer, value.byteOffset, value.byteLength))
+  }
+
+  return Buffer.concat(chunks, total)
+}
+
+function parseIntegerParam(url, name, fallback = null) {
+  const raw = url.searchParams.get(name)
+  if (raw == null || raw === '') return fallback
+
+  const value = Number.parseInt(raw, 10)
+  return Number.isFinite(value) ? value : fallback
+}
+
+function buildManifest({ safePath, contentType, fileSize, totalParts }) {
+  return {
+    version: 1,
+    kind: 'autoz-chunked-model',
+    fileName: safePath.split('/').pop() || safePath,
+    path: safePath,
+    contentType,
+    size: fileSize,
+    chunkSize: CHUNK_SIZE,
+    chunks: Array.from({ length: totalParts }, (_, index) => getPartName(safePath, index)),
+  }
+}
+
+async function uploadObject({ key, body, contentType, cacheControl }) {
+  await s3Client.send(
+    new PutObjectCommand({
+      Bucket: MODELS_BUCKET,
+      Key: key,
+      Body: body,
+      ContentLength: body.length,
+      ContentType: contentType,
+      CacheControl: cacheControl,
+    }),
+  )
+}
+
 export async function POST(request) {
   try {
     const url = new URL(request.url)
+    const mode = url.searchParams.get('mode') || 'part'
     const slug = url.searchParams.get('slug')
     const fileName = url.searchParams.get('fileName') || 'model.glb'
-    const fileSize = parseInt(url.searchParams.get('fileSize') || '0', 10)
+    const fileSize = parseIntegerParam(url, 'fileSize', 0)
     const contentTypeHint = url.searchParams.get('contentType') || ''
+    const totalParts = parseIntegerParam(url, 'totalParts', 0)
 
     if (!slug) {
       return NextResponse.json({ error: 'Missing required query param: slug' }, { status: 400 })
     }
 
     const safePath = sanitizePath(fileName)
-    const key = `models/${slug}/${safePath}`
     const contentType = guessMime(safePath, contentTypeHint)
 
-    if (!request.body) {
-      return NextResponse.json({ error: 'Request body is empty' }, { status: 400 })
+    if (mode === 'manifest') {
+      if (!totalParts || totalParts < 1) {
+        return NextResponse.json({ error: 'Missing or invalid totalParts for manifest upload.' }, { status: 400 })
+      }
+
+      const manifest = buildManifest({ safePath, contentType, fileSize, totalParts })
+      const body = Buffer.from(JSON.stringify(manifest, null, 2), 'utf8')
+      const key = `models/${slug}/manifest.json`
+
+      await uploadObject({
+        key,
+        body,
+        contentType: 'application/json',
+        cacheControl: CACHE_CONTROL_MANIFEST,
+      })
+
+      const publicUrl = getPublicStorageUrl(key)
+      console.log(`[Upload] manifest ${key} (${totalParts} parts) -> ${publicUrl}`)
+
+      return NextResponse.json({
+        publicUrl,
+        key,
+        path: 'manifest.json',
+        chunked: true,
+        manifest,
+        size: fileSize,
+        fileName: manifest.fileName,
+        contentType,
+      })
     }
 
-    // ─── Multipart upload driven by the request stream ────────────────────
-    const createResult = await s3Client.send(
-      new CreateMultipartUploadCommand({
-        Bucket: MODELS_BUCKET,
-        Key: key,
-        ContentType: contentType,
-        CacheControl: CACHE_CONTROL,
-      }),
-    )
-    const uploadId = createResult.UploadId
-    if (!uploadId) throw new Error('Storage did not return a multipart upload ID.')
+    const partIndex = parseIntegerParam(url, 'partIndex', null)
 
-    const completedParts = []
-
-    try {
-      // Buffer stream into fixed 8 MB parts and upload each as an S3 part.
-      // Web streams can yield arbitrarily large chunks, so each incoming value
-      // must be sliced instead of flushed whole once it crosses PART_SIZE.
-      const reader = request.body.getReader()
-      let partNumber = 0
-      let chunkBuffer = [] // array of Uint8Array pieces
-      let chunkSize = 0
-      const inFlight = new Set() // pending UploadPartCommand promises
-      let uploadError = null
-
-      const uploadChunk = async (partNum, body) => {
-        const result = await s3Client.send(
-          new UploadPartCommand({
-            Bucket: MODELS_BUCKET,
-            Key: key,
-            UploadId: uploadId,
-            PartNumber: partNum,
-            Body: body,
-            ContentLength: body.length,
-          }),
-        )
-        if (!result.ETag) throw new Error(`No ETag returned for part ${partNum}.`)
-        return { PartNumber: partNum, ETag: result.ETag }
-      }
-
-      const flushChunk = async () => {
-        if (chunkSize <= 0) return
-
-        partNumber += 1
-        if (partNumber > MAX_PARTS) throw new Error('File too large — exceeds maximum S3 part limit.')
-
-        // Concatenate chunk pieces into a single Buffer
-        const body = Buffer.concat(chunkBuffer.map((u8) => Buffer.from(u8.buffer, u8.byteOffset, u8.byteLength)))
-        chunkBuffer = []
-        chunkSize = 0
-
-        const pn = partNumber
-        const promise = uploadChunk(pn, body).then(
-          (part) => {
-            completedParts.push(part)
-          },
-          (err) => {
-            uploadError = err
-            throw err
-          },
-        )
-        inFlight.add(promise)
-        promise
-          .finally(() => {
-            inFlight.delete(promise)
-          })
-          .catch(() => {
-            // The rejection is stored in uploadError and re-thrown by the main flow.
-          })
-
-        // Throttle concurrency: wait until a slot is free
-        if (inFlight.size >= PART_CONCURRENCY) {
-          await Promise.race(inFlight)
-          if (uploadError) throw uploadError
-        }
-      }
-
-      const appendStreamChunk = async (value) => {
-        let offset = 0
-
-        while (offset < value.byteLength) {
-          const remainingInPart = PART_SIZE - chunkSize
-          const remainingInValue = value.byteLength - offset
-          const take = Math.min(remainingInPart, remainingInValue)
-
-          chunkBuffer.push(value.subarray(offset, offset + take))
-          chunkSize += take
-          offset += take
-
-          if (chunkSize === PART_SIZE) {
-            await flushChunk()
-          }
-        }
-      }
-
-      while (true) {
-        const { value, done } = await reader.read()
-        if (done) break
-
-        if (uploadError) throw uploadError
-        await appendStreamChunk(value)
-      }
-
-      // Flush remaining data as the final part
-      if (uploadError) throw uploadError
-      if (chunkSize > 0) {
-        await flushChunk()
-      }
-
-      // Wait for all in-flight uploads
-      await Promise.all([...inFlight])
-      if (uploadError) throw uploadError
-
-      // Sort parts by number (S3 requires ordered part list)
-      completedParts.sort((a, b) => a.PartNumber - b.PartNumber)
-
-      await s3Client.send(
-        new CompleteMultipartUploadCommand({
-          Bucket: MODELS_BUCKET,
-          Key: key,
-          UploadId: uploadId,
-          MultipartUpload: { Parts: completedParts },
-        }),
-      )
-    } catch (err) {
-      // Always abort the multipart upload on error to avoid zombie uploads
-      try {
-        await s3Client.send(
-          new AbortMultipartUploadCommand({
-            Bucket: MODELS_BUCKET,
-            Key: key,
-            UploadId: uploadId,
-          }),
-        )
-      } catch (abortErr) {
-        console.warn('[Upload] Failed to abort multipart upload:', abortErr.message)
-      }
-      throw err
+    if (partIndex == null || partIndex < 0) {
+      return NextResponse.json({ error: 'Missing or invalid partIndex.' }, { status: 400 })
     }
 
-    const publicUrl = getPublicStorageUrl(key)
-    console.log(`[Upload] ✓ ${key} (${(fileSize / 1024 / 1024).toFixed(1)} MB) → ${publicUrl}`)
+    if (!totalParts || partIndex >= totalParts) {
+      return NextResponse.json({ error: 'Missing or invalid totalParts.' }, { status: 400 })
+    }
 
-    return NextResponse.json({ publicUrl, key, size: fileSize, path: safePath })
+    const body = await readRequestBuffer(request, CHUNK_SIZE)
+    if (body.length === 0) {
+      return NextResponse.json({ error: 'Chunk body is empty.' }, { status: 400 })
+    }
+
+    const partName = getPartName(safePath, partIndex)
+    const key = `models/${slug}/${partName}`
+
+    await uploadObject({
+      key,
+      body,
+      contentType: 'application/octet-stream',
+      cacheControl: CACHE_CONTROL_CHUNK,
+    })
+
+    console.log(`[Upload] part ${partIndex + 1}/${totalParts} ${key} (${(body.length / 1024 / 1024).toFixed(1)} MB)`)
+
+    return NextResponse.json({
+      key,
+      path: partName,
+      publicUrl: getPublicStorageUrl(key),
+      partIndex,
+      totalParts,
+      size: body.length,
+    })
   } catch (err) {
     console.error('[Upload API] Error:', err)
     return NextResponse.json({ error: err.message }, { status: 500 })

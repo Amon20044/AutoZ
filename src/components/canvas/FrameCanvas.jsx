@@ -10,6 +10,7 @@ import * as THREE from 'three'
 import PostProcessing, { RendererSettings } from './PostProcessing'
 import PartButtons from './PartButtons'
 import { useAutoZEngine } from '@/engine/hooks/useAutoZEngine'
+import { createModelObjectUrl } from '@/lib/model/chunked-model'
 
 /**
  * Lightweight frame viewer canvas with grouped runtime controls.
@@ -22,12 +23,15 @@ export default function FrameCanvas({ snapshot }) {
   const [runtime, setRuntime] = useState({ engine: null, registry: null })
   const [lightsOn, setLightsOn] = useState(false)
   const [wheelsOn, setWheelsOn] = useState(false)
+  const [modelLoadProgress, setModelLoadProgress] = useState(null)
+  const [modelReady, setModelReady] = useState(false)
 
   const lightCount = runtime.registry?.lights.length ?? 0
   const wheelCount = runtime.registry?.wheelSpinParts.length ?? 0
 
   const handleRuntimeReady = useCallback((nextRuntime) => {
     setRuntime(nextRuntime)
+    setModelReady(Boolean(nextRuntime?.engine && nextRuntime?.registry))
   }, [])
 
   const toggleLights = useCallback(() => {
@@ -82,10 +86,11 @@ export default function FrameCanvas({ snapshot }) {
 
         <Suspense fallback={null}>
           {snapshot.model?.url && (
-            <FrameRuntime
+            <FrameRuntimeLoader
               snapshot={snapshot}
               platform={snapshot.platform ?? {}}
               onReady={handleRuntimeReady}
+              onProgress={setModelLoadProgress}
             />
           )}
         </Suspense>
@@ -93,6 +98,27 @@ export default function FrameCanvas({ snapshot }) {
         <ContactShadows position={[0, -0.001, 0]} opacity={0.5} blur={1.8} far={6} resolution={512} frames={1} color='#0a0a12' />
         {post.enabled !== false && <PostProcessing config={post} />}
       </Canvas>
+
+      {!modelReady && snapshot.model?.url && (
+        <div className='frame-loading'>
+          <div className='az-spinner' />
+          <div>{modelLoadProgress?.statusText || 'Loading model'}</div>
+          {modelLoadProgress && (
+            <div className='frame-load-progress'>
+              <div className='frame-load-progress-row'>
+                <span>{modelLoadProgress.completedParts ?? 0} / {modelLoadProgress.totalParts ?? 0} parts</span>
+                <strong>{modelLoadProgress.percent ?? 0}%</strong>
+              </div>
+              <div className='az-progress-bar'>
+                <span style={{ width: `${Math.max(0, Math.min(100, modelLoadProgress.percent ?? 0))}%` }} />
+              </div>
+              {modelLoadProgress.cachedParts ? (
+                <div className='frame-load-progress-meta'>{modelLoadProgress.cachedParts} cached</div>
+              ) : null}
+            </div>
+          )}
+        </div>
+      )}
 
       <div className='frame-controls' aria-label='Vehicle controls'>
         <button
@@ -120,8 +146,51 @@ export default function FrameCanvas({ snapshot }) {
   )
 }
 
-function FrameRuntime({ snapshot, platform, onReady }) {
-  const gltf = useGLTF(snapshot.model.url)
+function FrameRuntimeLoader({ snapshot, platform, onReady, onProgress }) {
+  const [modelUrl, setModelUrl] = useState(null)
+  const [modelError, setModelError] = useState(null)
+
+  useEffect(() => {
+    let active = true
+    let revoke = () => {}
+
+    setModelUrl(null)
+    setModelError(null)
+    onReady({ engine: null, registry: null })
+
+    createModelObjectUrl(snapshot.model, { onProgress })
+      .then((result) => {
+        revoke = result.revoke
+        if (active) {
+          setModelUrl(result.url)
+        } else {
+          revoke()
+        }
+      })
+      .catch((err) => {
+        if (active) setModelError(err)
+      })
+
+    return () => {
+      active = false
+      revoke()
+    }
+  }, [onReady, onProgress, snapshot.model])
+
+  if (modelError || !modelUrl) return <FramePlatform platform={platform} />
+
+  return (
+    <FrameRuntime
+      snapshot={snapshot}
+      platform={platform}
+      modelUrl={modelUrl}
+      onReady={onReady}
+    />
+  )
+}
+
+function FrameRuntime({ snapshot, platform, modelUrl, onReady }) {
+  const gltf = useGLTF(modelUrl)
   const { engine, registry } = useAutoZEngine(snapshot, gltf)
 
   useEffect(() => {

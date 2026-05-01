@@ -32,7 +32,11 @@ function normalizeSnapshotUrls(snapshot) {
   const fixed = { ...snapshot }
 
   if (fixed.model?.url) {
-    fixed.model = { ...fixed.model, url: fixLegacyStorageUrl(fixed.model.url) }
+    fixed.model = {
+      ...fixed.model,
+      url: fixLegacyStorageUrl(fixed.model.url),
+      manifestUrl: fixLegacyStorageUrl(fixed.model.manifestUrl),
+    }
   }
   if (Array.isArray(fixed.runtimeAssets)) {
     fixed.runtimeAssets = fixed.runtimeAssets.map((a) => ({

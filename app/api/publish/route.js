@@ -3,15 +3,14 @@
  *
  * Full publish pipeline — supports two model upload strategies:
  *
- * A) **Direct upload** (small files ≤50 MB):
+ * A) **Direct upload** (small files):
  *    Client sends model as a FormData `model` File field.
  *    The API uploads it to Supabase S3 server-side.
  *
- * B) **Presigned URL upload** (large files >50 MB):
- *    Client first calls POST /api/publish/upload-url to get a presigned URL,
- *    uploads the model directly to S3 from the browser, then calls this
- *    endpoint with `modelUrl` + `modelKey` + `modelFileName` + `modelFileSize`
- *    instead of a model File.
+ * B) **Chunked manifest upload** (large files):
+ *    Client uploads 3 MB objects through POST /api/publish/upload, then calls
+ *    this endpoint with `modelUrl` + `modelKey` + `modelFileName` +
+ *    `modelFileSize` + chunk manifest metadata instead of a model File.
  *
  * Pipeline:
  *   1. Receive config JSON (+ model file OR model metadata)
@@ -74,11 +73,13 @@ export async function POST(request) {
     const updateExistingPublish = formData.get('updateExisting') === 'true'
     const modelPathValue = formData.get('modelPath')
 
-    // Presigned upload fields (set when model was uploaded directly to S3)
+    // Pre-upload fields (set when the model was uploaded before publish finalization)
     const preUploadedModelUrl = formData.get('modelUrl')
     const preUploadedModelKey = formData.get('modelKey')
     const preUploadedModelFileName = formData.get('modelFileName')
     const preUploadedModelFileSize = formData.get('modelFileSize')
+    const preUploadedModelIsChunked = formData.get('modelIsChunked') === 'true'
+    const preUploadedModelManifest = parseJsonObject(formData.get('modelManifest'))
 
     const hasPreUploadedModel = typeof preUploadedModelUrl === 'string' && preUploadedModelUrl
     const hasDirectModel = isUploadedFile(modelFile)
@@ -104,15 +105,18 @@ export async function POST(request) {
     const publishIdChanged = resolvedPublish.changed
 
     // ─── 1. Resolve model URL + key ──────────────────────────────────
-    let modelUrl, modelKey, modelFileName, modelFileSize, modelMimeType
+    let modelUrl, modelKey, modelFileName, modelFileSize, modelMimeType, modelChunked, modelManifest
 
     if (hasPreUploadedModel) {
-      // Model was already uploaded to S3 via presigned URL
+      // Model was already uploaded to storage via either direct object upload
+      // or the chunked manifest workaround for large GLBs.
       modelUrl = preUploadedModelUrl
       modelKey = typeof preUploadedModelKey === 'string' ? preUploadedModelKey : `models/${slug}/model.glb`
       modelFileName = typeof preUploadedModelFileName === 'string' ? preUploadedModelFileName : 'model.glb'
       modelFileSize = parseInt(preUploadedModelFileSize, 10) || 0
-      modelMimeType = getContentTypeFromPath(modelFileName)
+      modelChunked = preUploadedModelIsChunked
+      modelManifest = modelChunked ? preUploadedModelManifest : null
+      modelMimeType = modelManifest?.contentType || getContentTypeFromPath(modelFileName)
     } else {
       // Direct upload — buffer model and upload to S3 server-side
       const modelPath = sanitizeStoragePath(
@@ -131,6 +135,12 @@ export async function POST(request) {
       modelUrl = getPublicStorageUrl(modelKey)
       modelFileName = modelFile.name
       modelFileSize = modelFile.size
+      modelChunked = false
+      modelManifest = null
+    }
+
+    if (modelChunked && (!Array.isArray(modelManifest?.chunks) || modelManifest.chunks.length === 0)) {
+      return NextResponse.json({ error: 'Chunked model metadata is missing a valid manifest.' }, { status: 400 })
     }
 
     // ─── 2. Upload resource files ────────────────────────────────────
@@ -211,6 +221,13 @@ export async function POST(request) {
         fileName: modelFileName,
         path: modelKey.split('/').slice(2).join('/') || modelFileName,
         fileSize: modelFileSize,
+        contentType: modelMimeType,
+        ...(modelChunked ? {
+          chunked: true,
+          manifestUrl: modelUrl,
+          manifestKey: modelKey,
+          manifest: modelManifest,
+        } : {}),
       },
       // ── Additional runtime assets (textures, bins, etc.) ──
       runtimeAssets,
@@ -281,7 +298,7 @@ export async function POST(request) {
         mimeType: modelMimeType,
         fileName: modelFileName,
         fileSizeBytes: BigInt(modelFileSize || 0),
-        metadata: {},
+        metadata: modelChunked ? { chunked: true, manifest: modelManifest } : {},
       },
       ...(thumbnailResult ? [{
         assetType: 'thumbnail',
@@ -509,6 +526,17 @@ function parseResourcePaths(value) {
     return Array.isArray(parsed) ? parsed : []
   } catch {
     return []
+  }
+}
+
+function parseJsonObject(value) {
+  if (!value || typeof value !== 'string') return null
+
+  try {
+    const parsed = JSON.parse(value)
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : null
+  } catch {
+    return null
   }
 }
 

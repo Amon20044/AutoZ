@@ -3,7 +3,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import dynamic from 'next/dynamic'
 import { useRouter } from 'next/navigation'
-import './editor.css'
 
 import ModelUploader from '@/components/dom/ModelUploader'
 import ProcessingLog from '@/components/dom/ProcessingLog'
@@ -11,6 +10,7 @@ import PartDetectionPanel from '@/components/dom/PartDetectionPanel'
 import EditorSettingsPanel from '@/components/dom/EditorSettingsPanel'
 import { runImportPipeline } from '@/engine/pipeline/import-pipeline'
 import { InteractionEngine } from '@/engine/core/interaction-engine'
+import { fetchModelBlob, normalizeStorageUrl } from '@/lib/model/chunked-model'
 
 // Dynamic import for the 3D viewer (no SSR)
 const CarViewer = dynamic(
@@ -78,34 +78,34 @@ const isTextureFile = (file) => {
   return Boolean(ext && TEXTURE_EXTENSIONS.has(ext))
 }
 
-/**
- * Stream-upload a large file to our /api/publish/upload proxy using XHR.
- * The proxy pipes the raw body directly into an S3 multipart upload — no
- * presigned URL needed, no CORS issue, no full-file buffering on server.
- *
- * @param {File}   file           - The model file (.glb/.gltf)
- * @param {string} slug           - Publish ID used to build the storage path
- * @param {string} [onProgress]   - Optional progress callback (pct 0-100)
- * @returns {Promise<{ publicUrl: string, key: string }>}
- */
-function uploadModelStreaming(file, slug, onProgress) {
+// Large model workaround: one Vercel-safe request per 3 MB file slice,
+// followed by a small manifest.json that the frame viewer can rehydrate.
+const LARGE_MODEL_CHUNK_SIZE = 3 * 1024 * 1024
+
+function uploadModelPart({ file, slug, partIndex, totalParts, start, end, onProgress }) {
   return new Promise((resolve, reject) => {
+    const chunk = file.slice(start, end)
     const params = new URLSearchParams({
       slug,
       fileName: file.name,
       fileSize: String(file.size),
       contentType: file.type || 'model/gltf-binary',
+      partIndex: String(partIndex),
+      totalParts: String(totalParts),
     })
 
     const xhr = new XMLHttpRequest()
     xhr.open('POST', `/api/publish/upload?${params}`, true)
-    xhr.setRequestHeader('Content-Type', file.type || 'model/gltf-binary')
+    xhr.setRequestHeader('Content-Type', 'application/octet-stream')
 
     xhr.upload.addEventListener('progress', (e) => {
       if (e.lengthComputable && onProgress) {
-        const pct = Math.round((e.loaded / e.total) * 100)
-        onProgress(pct)
-        console.log(`[Upload] ${file.name}: ${pct}% (${(e.loaded / 1024 / 1024).toFixed(1)} / ${(e.total / 1024 / 1024).toFixed(1)} MB)`)
+        onProgress({
+          partIndex,
+          totalParts,
+          loaded: e.loaded,
+          total: e.total,
+        })
       }
     })
 
@@ -134,8 +134,108 @@ function uploadModelStreaming(file, slug, onProgress) {
       reject(new Error(`Upload of ${file.name} was aborted.`))
     })
 
-    xhr.send(file)
+    xhr.send(chunk)
   })
+}
+
+async function uploadChunkedModel(file, slug, onProgress) {
+  const totalParts = Math.ceil(file.size / LARGE_MODEL_CHUNK_SIZE)
+  const parts = Array.from({ length: totalParts }, (_, index) => {
+    const start = index * LARGE_MODEL_CHUNK_SIZE
+    const end = Math.min(start + LARGE_MODEL_CHUNK_SIZE, file.size)
+
+    return {
+      index,
+      size: end - start,
+      uploaded: 0,
+      percent: 0,
+      status: 'pending',
+    }
+  })
+  let completedBytes = 0
+
+  const emit = (phase, extra = {}) => {
+    const uploadedBytes = Math.min(
+      file.size,
+      completedBytes + parts
+        .filter((part) => part.status === 'running')
+        .reduce((sum, part) => sum + part.uploaded, 0),
+    )
+    const percent = file.size > 0 ? Math.round((uploadedBytes / file.size) * 100) : 0
+
+    onProgress?.({
+      phase,
+      fileName: file.name,
+      totalBytes: file.size,
+      uploadedBytes,
+      percent,
+      totalParts,
+      completedParts: parts.filter((part) => part.status === 'done').length,
+      currentPart: extra.currentPart ?? null,
+      statusText: extra.statusText ?? '',
+      parts: parts.map((part) => ({ ...part })),
+    })
+  }
+
+  emit('preparing', { statusText: 'Preparing 3 MB upload parts' })
+
+  for (let partIndex = 0; partIndex < totalParts; partIndex += 1) {
+    const start = partIndex * LARGE_MODEL_CHUNK_SIZE
+    const end = Math.min(start + LARGE_MODEL_CHUNK_SIZE, file.size)
+    const part = parts[partIndex]
+
+    part.status = 'running'
+    part.uploaded = 0
+    part.percent = 0
+    emit('uploading', {
+      currentPart: partIndex,
+      statusText: `Uploading part ${partIndex + 1} of ${totalParts}`,
+    })
+
+    await uploadModelPart({
+      file,
+      slug,
+      partIndex,
+      totalParts,
+      start,
+      end,
+      onProgress: ({ loaded, total }) => {
+        part.uploaded = loaded
+        part.percent = total > 0 ? Math.round((loaded / total) * 100) : 0
+        emit('uploading', {
+          currentPart: partIndex,
+          statusText: `Uploading part ${partIndex + 1} of ${totalParts}`,
+        })
+      },
+    })
+
+    part.status = 'done'
+    part.uploaded = part.size
+    part.percent = 100
+    completedBytes += part.size
+    emit('uploading', {
+      currentPart: partIndex,
+      statusText: `Uploaded part ${partIndex + 1} of ${totalParts}`,
+    })
+  }
+
+  emit('manifest', { statusText: 'Writing manifest.json' })
+
+  const params = new URLSearchParams({
+    mode: 'manifest',
+    slug,
+    fileName: file.name,
+    fileSize: String(file.size),
+    contentType: file.type || 'model/gltf-binary',
+    totalParts: String(totalParts),
+  })
+  const res = await fetch(`/api/publish/upload?${params}`, { method: 'POST' })
+  const json = await res.json()
+  if (!res.ok) throw new Error(json.error || 'Could not finalize chunked model upload.')
+
+  completedBytes = file.size
+  emit('done', { statusText: 'Model upload complete' })
+  return json
 }
 
 const mergeSceneConfigFromSnapshot = (snapshot = {}) => ({
@@ -153,38 +253,8 @@ const mergeSceneConfigFromSnapshot = (snapshot = {}) => ({
   postprocessing: { ...DEFAULT_CONFIG.postprocessing, ...(snapshot.postprocessing ?? {}) },
 })
 
-/**
- * Fix legacy snapshot URLs that were stored using the S3-compatible endpoint
- * (e.g. https://xxx.storage.supabase.co/storage/v1/s3/object/public/...)
- * Rewrite them to the correct Supabase Storage REST public URL format:
- *   https://xxx.supabase.co/storage/v1/object/public/...
- */
-function normalizeStorageUrl(url) {
-  try {
-    const parsed = new URL(url)
-    // Detect S3-endpoint URLs: hostname = *.storage.supabase.co, path includes /s3/
-    if (
-      parsed.hostname.endsWith('.storage.supabase.co') &&
-      parsed.pathname.includes('/storage/v1/s3/')
-    ) {
-      // Rewrite hostname: xxx.storage.supabase.co → xxx.supabase.co
-      parsed.hostname = parsed.hostname.replace('.storage.supabase.co', '.supabase.co')
-      // Remove /s3 segment from path
-      parsed.pathname = parsed.pathname.replace('/storage/v1/s3/', '/storage/v1/')
-      return parsed.toString()
-    }
-  } catch {
-    // If URL parsing fails, return as-is and let fetch handle the error
-  }
-  return url
-}
-
-async function fetchSnapshotFileEntry({ url, path, fileName }) {
-  const fixedUrl = normalizeStorageUrl(url)
-  const res = await fetch(fixedUrl)
-  if (!res.ok) throw new Error(`Could not load ${fileName || path || 'asset'}`)
-
-  const blob = await res.blob()
+async function fetchSnapshotFileEntry({ model, url, path, fileName, onProgress }) {
+  const blob = await fetchModelBlob(model ?? { url: normalizeStorageUrl(url), path, fileName }, { onProgress })
   const name = fileName || path?.split('/').pop() || 'asset'
   return {
     path: path || name,
@@ -192,15 +262,21 @@ async function fetchSnapshotFileEntry({ url, path, fileName }) {
   }
 }
 
-async function buildSnapshotFileEntries(snapshot) {
+async function buildSnapshotFileEntries(snapshot, onModelProgress) {
   if (!snapshot.model?.url) return []
 
-  const modelPath = snapshot.model.path || snapshot.model.fileName || 'model.glb'
+  const modelName = snapshot.model.fileName
+    || snapshot.model.manifest?.fileName
+    || snapshot.model.path?.split('/').pop()
+    || 'model.glb'
+  const modelPath = snapshot.model.chunked ? modelName : (snapshot.model.path || modelName)
   const entries = [
     await fetchSnapshotFileEntry({
+      model: snapshot.model,
       url: snapshot.model.url,
       path: modelPath,
-      fileName: snapshot.model.fileName || modelPath.split('/').pop(),
+      fileName: modelName,
+      onProgress: onModelProgress,
     }),
   ]
 
@@ -231,6 +307,7 @@ export default function EditorPage({ initialPublishId = '' }) {
   const [isAllocatingPublishId, setIsAllocatingPublishId] = useState(true)
   const [isEditingExistingPublish, setIsEditingExistingPublish] = useState(Boolean(initialPublishId))
   const [publishProgress, setPublishProgress] = useState(() => buildPublishProgress())
+  const [uploadProgress, setUploadProgress] = useState(null)
   const [publishResult, setPublishResult] = useState(null) // { slug, embedCode, frameUrl }
   const [toast, setToast] = useState(null)
 
@@ -329,11 +406,20 @@ export default function EditorPage({ initialPublishId = '' }) {
   }, [clearPublishTimers])
 
   // ─── File Upload → Pipeline ─────────────────────────────────────────────
-  const handleFiles = useCallback(async (files) => {
+  const handleFiles = useCallback(async (files, options = {}) => {
     setPhase('processing')
     setError(null)
     setPublishResult(null)
     setPublishProgress(buildPublishProgress())
+    if (!options.preserveTransferProgress) setUploadProgress(null)
+    if (options.preserveTransferProgress) {
+      setUploadProgress((prev) => prev ? {
+        ...prev,
+        phase: 'building',
+        percent: 100,
+        statusText: 'Rebuilding editable scene',
+      } : prev)
+    }
     droppedFilesRef.current = files
     modelFileRef.current = null
     modelEntryRef.current = null
@@ -350,6 +436,14 @@ export default function EditorPage({ initialPublishId = '' }) {
       const result = await runImportPipeline(files)
       setImportResult(result)
       setPhase('ready')
+      if (options.preserveTransferProgress) {
+        setUploadProgress((prev) => prev ? {
+          ...prev,
+          phase: 'done',
+          percent: 100,
+          statusText: 'Scene ready',
+        } : prev)
+      }
     } catch (err) {
       setError(err.message)
       setPhase('upload')
@@ -361,32 +455,32 @@ export default function EditorPage({ initialPublishId = '' }) {
 
     let active = true
 
-    ;(async () => {
-      try {
-        setError(null)
-        setPhase('processing')
+      ; (async () => {
+        try {
+          setError(null)
+          setPhase('processing')
 
-        const res = await fetch(`/api/project/${initialPublishId}`, { cache: 'no-store' })
-        const json = await res.json()
-        if (!res.ok) throw new Error(json.error || 'Could not load saved project')
+          const res = await fetch(`/api/project/${initialPublishId}`, { cache: 'no-store' })
+          const json = await res.json()
+          if (!res.ok) throw new Error(json.error || 'Could not load saved project')
 
-        const snapshot = json.publish.snapshot
-        setSceneConfig(mergeSceneConfigFromSnapshot(snapshot))
+          const snapshot = json.publish.snapshot
+          setSceneConfig(mergeSceneConfigFromSnapshot(snapshot))
 
-        const entries = await buildSnapshotFileEntries(snapshot)
+        const entries = await buildSnapshotFileEntries(snapshot, setUploadProgress)
         if (!active) return
 
         if (entries.length > 0) {
-          await handleFiles(entries)
-        } else {
+          await handleFiles(entries, { preserveTransferProgress: true })
+          } else {
+            setPhase('upload')
+          }
+        } catch (err) {
+          if (!active) return
+          setError(err.message)
           setPhase('upload')
         }
-      } catch (err) {
-        if (!active) return
-        setError(err.message)
-        setPhase('upload')
-      }
-    })()
+      })()
 
     return () => {
       active = false
@@ -410,11 +504,9 @@ export default function EditorPage({ initialPublishId = '' }) {
   }, [])
 
   // ─── Publish ────────────────────────────────────────────────────────────
-  // All files go through the streaming upload proxy — no presigned URL needed.
-  // Small files (<50MB): included in the publish formData directly.
-  // Large files (≥50MB): streamed via /api/publish/upload, then publish API
-  //   receives model URL + key metadata instead of the file.
-  const DIRECT_UPLOAD_LIMIT = 50 * 1024 * 1024
+  // Small files (<=3MB): included in the publish formData directly.
+  // Larger files: uploaded as 3 MB objects + manifest.json, then the
+  // publish API receives model metadata instead of the full file.
 
   const handlePublish = useCallback(async () => {
     if (!importResult || !modelFileRef.current) return
@@ -422,6 +514,7 @@ export default function EditorPage({ initialPublishId = '' }) {
     setIsPublishing(true)
     setError(null)
     setPublishResult(null)
+    setUploadProgress(null)
 
     // Step 0: Checking URL ID
     clearPublishTimers()
@@ -438,19 +531,12 @@ export default function EditorPage({ initialPublishId = '' }) {
 
       const modelFile = modelFileRef.current
       const modelPath = modelEntryRef.current?.path || modelFile.name
-      const isLargeFile = modelFile.size > DIRECT_UPLOAD_LIMIT
+      const isLargeFile = modelFile.size > LARGE_MODEL_CHUNK_SIZE
 
-      let modelUploadMeta = null // { modelUrl, modelKey, modelFileName, modelFileSize }
+      let modelUploadMeta = null
 
       if (isLargeFile) {
-        // ─── Large file: stream directly through our upload proxy ────
-        // XHR body = raw binary, no multipart envelope.
-        // Server pipes it into S3 multipart without buffering whole file.
-        const uploadResult = await uploadModelStreaming(
-          modelFile,
-          activePublishId,
-          (_pct) => { /* progress tracked in console */ },
-        )
+        const uploadResult = await uploadChunkedModel(modelFile, activePublishId, setUploadProgress)
         if (!uploadResult?.publicUrl) throw new Error('Upload proxy returned no URL.')
 
         modelUploadMeta = {
@@ -458,6 +544,8 @@ export default function EditorPage({ initialPublishId = '' }) {
           modelKey: uploadResult.key,
           modelFileName: modelFile.name,
           modelFileSize: String(modelFile.size),
+          modelIsChunked: 'true',
+          modelManifest: JSON.stringify(uploadResult.manifest ?? {}),
         }
       }
 
@@ -481,14 +569,14 @@ export default function EditorPage({ initialPublishId = '' }) {
         parts: importResult.registry?.serialize?.() ?? [],
         import: {
           // Fields used directly by applyNormalization in FrameCanvas:
-          combinedScale:  normResult.combinedScale  ?? 1,
-          centerOffset:   normResult.centerOffset   ?? [0, 0],    // [cx, cz]
-          groundOffset:   normResult.groundOffset   ?? 0,
-          rotation:       normResult.rotation       ?? { quaternion: [0,0,0,1] },
+          combinedScale: normResult.combinedScale ?? 1,
+          centerOffset: normResult.centerOffset ?? [0, 0],    // [cx, cz]
+          groundOffset: normResult.groundOffset ?? 0,
+          rotation: normResult.rotation ?? { quaternion: [0, 0, 0, 1] },
           // Additional metadata for reference:
-          scaleFactor:    normResult.scaleFactor    ?? 1,
-          unitScale:      normResult.unitScale      ?? 1,
-          dimensions:     normResult.dimensions     ?? {},
+          scaleFactor: normResult.scaleFactor ?? 1,
+          unitScale: normResult.unitScale ?? 1,
+          dimensions: normResult.dimensions ?? {},
         },
       }
 
@@ -500,6 +588,8 @@ export default function EditorPage({ initialPublishId = '' }) {
         formData.append('modelKey', modelUploadMeta.modelKey)
         formData.append('modelFileName', modelUploadMeta.modelFileName)
         formData.append('modelFileSize', modelUploadMeta.modelFileSize)
+        formData.append('modelIsChunked', modelUploadMeta.modelIsChunked)
+        formData.append('modelManifest', modelUploadMeta.modelManifest)
       } else {
         // Small file path: send file directly via formData
         formData.append('model', modelFile)
@@ -536,6 +626,7 @@ export default function EditorPage({ initialPublishId = '' }) {
       setTimeout(() => setToast(null), 6000)
     } catch (err) {
       failPublishProgress()
+      setUploadProgress((prev) => prev ? { ...prev, phase: 'error', statusText: err.message } : prev)
       setError(err.message)
     } finally {
       setIsPublishing(false)
@@ -555,6 +646,7 @@ export default function EditorPage({ initialPublishId = '' }) {
     setError(null)
     setSceneConfig({ ...DEFAULT_CONFIG })
     setPublishProgress(buildPublishProgress())
+    setUploadProgress(null)
     setPublishResult(null)
     setIsEditingExistingPublish(false)
     router.replace('/editor')
@@ -689,6 +781,21 @@ export default function EditorPage({ initialPublishId = '' }) {
                 <div style={{ fontSize: 14, color: 'var(--az-text-dim)' }}>
                   Processing model…
                 </div>
+                {uploadProgress && (
+                  <div className='az-loading-progress'>
+                    <div className='az-loading-progress-row'>
+                      <span>{uploadProgress.statusText || 'Loading model'}</span>
+                      <strong>{uploadProgress.percent ?? 0}%</strong>
+                    </div>
+                    <div className='az-progress-bar'>
+                      <span style={{ width: `${Math.max(0, Math.min(100, uploadProgress.percent ?? 0))}%` }} />
+                    </div>
+                    <div className='az-loading-progress-meta'>
+                      {(uploadProgress.completedParts ?? 0)} / {(uploadProgress.totalParts ?? 0)} parts
+                      {uploadProgress.cachedParts ? `, ${uploadProgress.cachedParts} cached` : ''}
+                    </div>
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -705,6 +812,7 @@ export default function EditorPage({ initialPublishId = '' }) {
             publishIdError={publishIdError}
             isAllocatingPublishId={isAllocatingPublishId}
             publishProgress={publishProgress}
+            uploadProgress={uploadProgress}
           />
         )}
       </div>

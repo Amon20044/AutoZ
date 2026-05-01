@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useCallback } from 'react'
+import { useState } from 'react'
 
 /** Available HDRI presets from drei */
 const HDRI_PRESETS = [
@@ -29,7 +29,7 @@ const PLATFORM_COLORS = [
 /**
  * Right-side settings panel — Canva-style controls for environment, lighting, fog, platform.
  *
- * @param {{ config: object, onChange: (key: string, value: any) => void, onPublish: () => void, isPublishing: boolean, publishId?: string, publishIdError?: string, isAllocatingPublishId?: boolean, publishProgress?: object[] }} props
+ * @param {{ config: object, onChange: (key: string, value: any) => void, onPublish: () => void, isPublishing: boolean, publishId?: string, publishIdError?: string, isAllocatingPublishId?: boolean, publishProgress?: object[], uploadProgress?: object | null }} props
  */
 export default function EditorSettingsPanel({
   config,
@@ -40,6 +40,7 @@ export default function EditorSettingsPanel({
   publishIdError = null,
   isAllocatingPublishId = false,
   publishProgress = [],
+  uploadProgress = null,
 }) {
   const [expandedSection, setExpandedSection] = useState('environment')
 
@@ -81,6 +82,9 @@ export default function EditorSettingsPanel({
                 </div>
               ))}
             </div>
+          )}
+          {uploadProgress && (
+            <UploadProgressPanel progress={uploadProgress} />
           )}
         </div>
       </div>
@@ -333,6 +337,90 @@ export default function EditorSettingsPanel({
 }
 
 // ─── Reusable Subcomponents ──────────────────────────────────────────────────
+
+function clampPercent(value) {
+  if (!Number.isFinite(value)) return 0
+  return Math.max(0, Math.min(100, Math.round(value)))
+}
+
+function formatBytes(bytes = 0) {
+  if (!bytes) return '0 MB'
+
+  const mb = bytes / 1024 / 1024
+  if (mb < 1024) return `${mb.toFixed(mb >= 10 ? 1 : 2)} MB`
+
+  return `${(mb / 1024).toFixed(2)} GB`
+}
+
+function getChunkLabel(part) {
+  const number = String((part?.index ?? 0) + 1).padStart(3, '0')
+  return `Part ${number}`
+}
+
+function UploadProgressPanel({ progress }) {
+  const percent = clampPercent(progress.percent)
+  const parts = progress.parts ?? []
+  const currentPart = typeof progress.currentPart === 'number'
+    ? parts[progress.currentPart]
+    : parts.find((part) => part.status === 'running')
+  const currentPercent = clampPercent(currentPart?.percent ?? 0)
+  const statusText = progress.statusText || (
+    progress.phase === 'done'
+      ? 'Upload complete'
+      : progress.phase === 'manifest'
+        ? 'Writing manifest.json'
+        : 'Uploading model chunks'
+  )
+
+  return (
+    <div className='az-upload-progress'>
+      <div className='az-upload-progress-head'>
+        <div>
+          <div className='az-upload-progress-title'>{progress.fileName || 'Model upload'}</div>
+          <div className='az-upload-progress-sub'>{statusText}</div>
+        </div>
+        <strong>{percent}%</strong>
+      </div>
+
+      <ProgressBar value={percent} className='az-upload-progress-bar' />
+
+      <div className='az-upload-progress-meta'>
+        <span>{formatBytes(progress.uploadedBytes)} / {formatBytes(progress.totalBytes)}</span>
+        <span>{progress.completedParts ?? 0} / {progress.totalParts ?? parts.length} parts</span>
+      </div>
+
+      {currentPart && (
+        <div className='az-upload-current'>
+          <div className='az-upload-current-row'>
+            <span>{getChunkLabel(currentPart)}</span>
+            <span>{currentPercent}%</span>
+          </div>
+          <ProgressBar value={currentPercent} className='az-upload-current-bar' />
+        </div>
+      )}
+
+      {parts.length > 0 && (
+        <div className='az-upload-parts' aria-label='Upload parts'>
+          {parts.map((part) => (
+            <div key={part.index} className={`az-upload-part az-upload-part--${part.status}`}>
+              <span className='az-upload-part-label'>{String(part.index + 1).padStart(2, '0')}</span>
+              <ProgressBar value={part.percent} className='az-upload-part-bar' />
+              <span className='az-upload-part-state'>{part.cached ? 'cached' : part.status}</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function ProgressBar({ value, className = '' }) {
+  return (
+    <div className={`az-progress-bar ${className}`}>
+      <span style={{ width: `${clampPercent(value)}%` }} />
+    </div>
+  )
+}
 
 function SectionHeader({ title, icon, expanded, onClick }) {
   return (

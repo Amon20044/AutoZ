@@ -2,7 +2,6 @@
 
 import { useEffect, useRef } from 'react'
 import Link from 'next/link'
-import './landing.css'
 
 const PROBLEMS = [
   { num: '01 / 04', title: 'Custom-coded viewers per car model', body: 'Every new vehicle requires bespoke Three.js work from scratch. Interactions, lighting, camera — all re-engineered every time.', cost: 'Avg. 8–12 weeks of dev time per vehicle' },
