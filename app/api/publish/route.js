@@ -1,13 +1,26 @@
 /**
  * POST /api/publish
  *
- * Full publish pipeline:
- *   1. Receive model file + config JSON from editor
- *   2. Upload .glb model to Supabase S3
- *   3. Process textures → optimized WebP → upload to ImgBB
- *   4. Build snapshot JSON (3D config + asset URLs)
- *   5. Create Project + Assets + Publish rows in DB
- *   6. Return publish slug for iframe embed
+ * Full publish pipeline — supports two model upload strategies:
+ *
+ * A) **Direct upload** (small files ≤50 MB):
+ *    Client sends model as a FormData `model` File field.
+ *    The API uploads it to Supabase S3 server-side.
+ *
+ * B) **Presigned URL upload** (large files >50 MB):
+ *    Client first calls POST /api/publish/upload-url to get a presigned URL,
+ *    uploads the model directly to S3 from the browser, then calls this
+ *    endpoint with `modelUrl` + `modelKey` + `modelFileName` + `modelFileSize`
+ *    instead of a model File.
+ *
+ * Pipeline:
+ *   1. Receive config JSON (+ model file OR model metadata)
+ *   2. Upload .glb model to S3 if provided as file
+ *   3. Upload resource files to S3
+ *   4. Process textures → WebP → ImgBB
+ *   5. Build complete snapshot JSON (full 3D config + asset URLs)
+ *   6. Create/update Project + Assets + Publish rows in DB
+ *   7. Return publish slug + frame URL + embed code
  */
 import { NextResponse } from 'next/server'
 import {
@@ -49,7 +62,7 @@ export async function POST(request) {
     const formData = await request.formData()
 
     // ─── Extract fields ───────────────────────────────────────────────
-    const modelFile = formData.get('model')       // File: .glb
+    const modelFile = formData.get('model')       // File: .glb (may be null for presigned uploads)
     const configJson = formData.get('config')     // string: JSON
     const projectNameValue = formData.get('name')
     const projectName = typeof projectNameValue === 'string' && projectNameValue.trim()
@@ -60,15 +73,22 @@ export async function POST(request) {
     const requestedPublishId = typeof requestedPublishIdValue === 'string' ? requestedPublishIdValue : null
     const updateExistingPublish = formData.get('updateExisting') === 'true'
     const modelPathValue = formData.get('modelPath')
-    const modelPath = sanitizeStoragePath(
-      typeof modelPathValue === 'string' ? modelPathValue : modelFile?.name || 'model.glb',
-    )
+
+    // Presigned upload fields (set when model was uploaded directly to S3)
+    const preUploadedModelUrl = formData.get('modelUrl')
+    const preUploadedModelKey = formData.get('modelKey')
+    const preUploadedModelFileName = formData.get('modelFileName')
+    const preUploadedModelFileSize = formData.get('modelFileSize')
+
+    const hasPreUploadedModel = typeof preUploadedModelUrl === 'string' && preUploadedModelUrl
+    const hasDirectModel = isUploadedFile(modelFile)
+
+    if (!hasPreUploadedModel && !hasDirectModel) {
+      return NextResponse.json({ error: 'No model provided. Send either a model file or modelUrl/modelKey from presigned upload.' }, { status: 400 })
+    }
+
     const resourceFiles = formData.getAll('resources').filter(isUploadedFile)
     const resourcePaths = parseResourcePaths(formData.get('resourcePaths'))
-
-    if (!isUploadedFile(modelFile)) {
-      return NextResponse.json({ error: 'No model file provided' }, { status: 400 })
-    }
 
     const config = typeof configJson === 'string' && configJson ? JSON.parse(configJson) : {}
     const existingPublish = updateExistingPublish && requestedPublishId
@@ -83,23 +103,42 @@ export async function POST(request) {
     const slug = resolvedPublish.publishId
     const publishIdChanged = resolvedPublish.changed
 
-    // ─── 1. Upload model to Supabase S3 ────────────────────────────────
-    const modelBuffer = Buffer.from(await modelFile.arrayBuffer())
-    const modelKey = `models/${slug}/${modelPath}`
+    // ─── 1. Resolve model URL + key ──────────────────────────────────
+    let modelUrl, modelKey, modelFileName, modelFileSize, modelMimeType
 
-    await uploadBufferToS3Object({
-      key: modelKey,
-      body: modelBuffer,
-      contentType: getContentType(modelFile, modelPath),
-    })
+    if (hasPreUploadedModel) {
+      // Model was already uploaded to S3 via presigned URL
+      modelUrl = preUploadedModelUrl
+      modelKey = typeof preUploadedModelKey === 'string' ? preUploadedModelKey : `models/${slug}/model.glb`
+      modelFileName = typeof preUploadedModelFileName === 'string' ? preUploadedModelFileName : 'model.glb'
+      modelFileSize = parseInt(preUploadedModelFileSize, 10) || 0
+      modelMimeType = getContentTypeFromPath(modelFileName)
+    } else {
+      // Direct upload — buffer model and upload to S3 server-side
+      const modelPath = sanitizeStoragePath(
+        typeof modelPathValue === 'string' ? modelPathValue : modelFile.name || 'model.glb',
+      )
+      const modelBuffer = Buffer.from(await modelFile.arrayBuffer())
+      modelKey = `models/${slug}/${modelPath}`
+      modelMimeType = getContentType(modelFile, modelPath)
 
-    const modelUrl = getPublicStorageUrl(modelKey)
+      await uploadBufferToS3Object({
+        key: modelKey,
+        body: modelBuffer,
+        contentType: modelMimeType,
+      })
 
+      modelUrl = getPublicStorageUrl(modelKey)
+      modelFileName = modelFile.name
+      modelFileSize = modelFile.size
+    }
+
+    // ─── 2. Upload resource files ────────────────────────────────────
     const runtimeAssets = []
     for (let i = 0; i < resourceFiles.length; i++) {
       const resourceFile = resourceFiles[i]
       const resourcePath = sanitizeStoragePath(resourcePaths[i] || resourceFile.name)
-      if (!resourcePath || resourcePath === modelPath) continue
+      if (!resourcePath) continue
 
       const resourceBuffer = Buffer.from(await resourceFile.arrayBuffer())
       const resourceKey = `models/${slug}/${resourcePath}`
@@ -121,7 +160,7 @@ export async function POST(request) {
       })
     }
 
-    // ─── 2. Process thumbnail → WebP → ImgBB ──────────────────────────
+    // ─── 3. Process thumbnail → WebP → ImgBB ──────────────────────────
     let thumbnailResult = null
     if (isUploadedFile(thumbnailFile)) {
       const thumbBuffer = Buffer.from(await thumbnailFile.arrayBuffer())
@@ -135,7 +174,7 @@ export async function POST(request) {
       })
     }
 
-    // ─── 3. Process texture screenshots if provided ─────────────────────
+    // ─── 4. Process texture screenshots if provided ─────────────────────
     const textureAssets = []
     const textureFiles = formData.getAll('textures') // File[]
     for (const texFile of textureFiles) {
@@ -160,26 +199,34 @@ export async function POST(request) {
       }
     }
 
-    // ─── 4. Build snapshot ─────────────────────────────────────────────
+    // ─── 5. Build complete snapshot JSON ───────────────────────────────
+    // The snapshot is the single source of truth for the /frame viewer.
+    // It must contain EVERY piece of information needed to render the scene.
     const snapshot = {
       version: 1,
       slug,
+      // ── Model asset reference ──
       model: {
         url: modelUrl,
-        fileName: modelFile.name,
-        path: modelPath,
-        fileSize: modelFile.size,
+        fileName: modelFileName,
+        path: modelKey.split('/').slice(2).join('/') || modelFileName,
+        fileSize: modelFileSize,
       },
+      // ── Additional runtime assets (textures, bins, etc.) ──
       runtimeAssets,
+      // ── Visual preview assets ──
       thumbnail: thumbnailResult ? {
         url: thumbnailResult.url,
         thumbUrl: thumbnailResult.thumbUrl,
       } : null,
       textureAssets,
-      // 3D configuration from editor
+      // ── Import/normalization config ──
       import: config.import || {},
+      // ── Interactive parts registry ──
       parts: config.parts || [],
+      // ── Materials config ──
       materials: config.materials || [],
+      // ── Lighting config (complete) ──
       lighting: config.lighting || {
         intensity: 1,
         ambient: { enabled: true, color: '#ffffff', intensity: 0.35 },
@@ -189,8 +236,11 @@ export async function POST(request) {
           { type: 'directional', position: [0, 4, 6], intensity: 1.1, color: '#ffffff' },
         ],
       },
+      // ── Environment config ──
       environment: config.environment || { preset: 'studio', background: false },
+      // ── Camera config ──
       camera: config.camera || { fov: 40, autoFit: true, position: [5, 3, -7] },
+      // ── Platform / turntable config ──
       platform: config.platform || {
         enabled: true,
         radius: 3,
@@ -200,7 +250,9 @@ export async function POST(request) {
         autoRotate: true,
         rotateSpeed: 0.12,
       },
+      // ── Fog config ──
       fog: config.fog || { enabled: false, color: '#0a0a0f', near: 10, far: 50 },
+      // ── Post-processing config ──
       postprocessing: config.postprocessing || {
         enabled: true,
         glare: 0.18,
@@ -210,12 +262,15 @@ export async function POST(request) {
         contrast: 1,
         saturation: 1,
       },
+      // ── Performance preset ──
       performance: config.performance || { preset: 'high' },
+      // ── Branding ──
       branding: { watermark: true, text: 'made in AutoZ' },
+      // ── Timestamp ──
       publishedAt: new Date().toISOString(),
     }
 
-    // ─── 5. Save to database ──────────────────────────────────────────
+    // ─── 6. Save to database ──────────────────────────────────────────
     const nextVersion = existingPublish ? existingPublish.version + 1 : 1
     const assetCreates = [
       {
@@ -223,9 +278,9 @@ export async function POST(request) {
         storageProvider: 'supabase_s3',
         publicUrl: modelUrl,
         storagePath: modelKey,
-        mimeType: getContentType(modelFile, modelPath),
-        fileName: modelFile.name,
-        fileSizeBytes: BigInt(modelFile.size),
+        mimeType: modelMimeType,
+        fileName: modelFileName,
+        fileSizeBytes: BigInt(modelFileSize || 0),
         metadata: {},
       },
       ...(thumbnailResult ? [{
@@ -470,7 +525,10 @@ function sanitizeStoragePath(value) {
 
 function getContentType(file, path) {
   if (file.type) return file.type
+  return getContentTypeFromPath(path)
+}
 
+function getContentTypeFromPath(path) {
   const ext = path.split('.').pop()?.toLowerCase()
   const types = {
     bin: 'application/octet-stream',

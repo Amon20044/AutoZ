@@ -78,6 +78,51 @@ const isTextureFile = (file) => {
   return Boolean(ext && TEXTURE_EXTENSIONS.has(ext))
 }
 
+/**
+ * Upload a file directly to S3 via a presigned PUT URL.
+ * Uses XMLHttpRequest for upload progress tracking.
+ *
+ * @param {string} presignedUrl - The presigned PUT URL from the API.
+ * @param {File} file - The file to upload.
+ * @param {string} [fileName] - Display name for error messages.
+ * @returns {Promise<void>}
+ */
+function uploadFileToPresignedUrl(presignedUrl, file, fileName) {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest()
+    xhr.open('PUT', presignedUrl, true)
+    xhr.setRequestHeader('Content-Type', file.type || 'application/octet-stream')
+
+    xhr.upload.addEventListener('progress', (e) => {
+      if (e.lengthComputable) {
+        const pct = Math.round((e.loaded / e.total) * 100)
+        console.log(`[Upload] ${fileName || file.name}: ${pct}% (${(e.loaded / 1024 / 1024).toFixed(1)} / ${(e.total / 1024 / 1024).toFixed(1)} MB)`)
+      }
+    })
+
+    xhr.addEventListener('load', () => {
+      if (xhr.status >= 200 && xhr.status < 300) {
+        resolve()
+      } else {
+        reject(new Error(
+          `Failed to upload ${fileName || file.name} to storage (HTTP ${xhr.status}). ` +
+          'The file may be too large for the storage bucket limit, or the upload URL expired.',
+        ))
+      }
+    })
+
+    xhr.addEventListener('error', () => {
+      reject(new Error(`Network error while uploading ${fileName || file.name}. Check your connection and try again.`))
+    })
+
+    xhr.addEventListener('abort', () => {
+      reject(new Error(`Upload of ${fileName || file.name} was aborted.`))
+    })
+
+    xhr.send(file)
+  })
+}
+
 const mergeSceneConfigFromSnapshot = (snapshot = {}) => ({
   ...DEFAULT_CONFIG,
   environment: { ...DEFAULT_CONFIG.environment, ...(snapshot.environment ?? {}) },
@@ -350,13 +395,19 @@ export default function EditorPage({ initialPublishId = '' }) {
   }, [])
 
   // ─── Publish ────────────────────────────────────────────────────────────
+  // Threshold for switching to presigned URL upload (50 MB)
+  const DIRECT_UPLOAD_LIMIT = 50 * 1024 * 1024
+
   const handlePublish = useCallback(async () => {
     if (!importResult || !modelFileRef.current) return
 
     setIsPublishing(true)
     setError(null)
     setPublishResult(null)
-    startPublishProgress()
+
+    // Step 0: Checking URL ID
+    clearPublishTimers()
+    setPublishProgress(buildPublishProgress(0))
 
     try {
       const activePublishId = publishId || await requestPublishId({ replaceStored: true })
@@ -364,14 +415,65 @@ export default function EditorPage({ initialPublishId = '' }) {
         throw new Error('Publish ID is not ready yet. Please try again.')
       }
 
+      // Step 1: Uploading model
+      setPublishProgress(buildPublishProgress(1))
+
+      const modelFile = modelFileRef.current
+      const modelPath = modelEntryRef.current?.path || modelFile.name
+      const isLargeFile = modelFile.size > DIRECT_UPLOAD_LIMIT
+
+      let modelUploadMeta = null // { modelUrl, modelKey, modelFileName, modelFileSize }
+
+      if (isLargeFile) {
+        // ─── Large file: presigned URL upload directly to S3 ────────
+        const urlRes = await fetch('/api/publish/upload-url', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            slug: activePublishId,
+            fileName: modelPath,
+            contentType: modelFile.type || 'model/gltf-binary',
+          }),
+        })
+        const urlJson = await urlRes.json()
+        if (!urlRes.ok) throw new Error(urlJson.error || 'Failed to get upload URL')
+
+        // Upload directly to S3 using the presigned PUT URL
+        await uploadFileToPresignedUrl(urlJson.uploadUrl, modelFile, urlJson.path)
+
+        modelUploadMeta = {
+          modelUrl: urlJson.publicUrl,
+          modelKey: urlJson.key,
+          modelFileName: modelFile.name,
+          modelFileSize: String(modelFile.size),
+        }
+      }
+
+      // Step 2: Uploading textures / resources
+      setPublishProgress(buildPublishProgress(2))
+
       const resourceEntries = droppedFilesRef.current.filter((entry) => (
         entry.file !== modelFileRef.current
       ))
       const resourcePaths = resourceEntries.map((entry) => entry.path || entry.file.name)
 
+      // Step 3: Finalizing scene (building formData + calling publish API)
+      setPublishProgress(buildPublishProgress(3))
+
       const formData = new FormData()
-      formData.append('model', modelFileRef.current)
-      formData.append('modelPath', modelEntryRef.current?.path || modelFileRef.current.name)
+
+      if (isLargeFile && modelUploadMeta) {
+        // Large file path: send model metadata instead of file
+        formData.append('modelUrl', modelUploadMeta.modelUrl)
+        formData.append('modelKey', modelUploadMeta.modelKey)
+        formData.append('modelFileName', modelUploadMeta.modelFileName)
+        formData.append('modelFileSize', modelUploadMeta.modelFileSize)
+      } else {
+        // Small file path: send file directly
+        formData.append('model', modelFile)
+        formData.append('modelPath', modelPath)
+      }
+
       formData.append('publishId', activePublishId)
       formData.append('updateExisting', isEditingExistingPublish ? 'true' : 'false')
       formData.append('name', importResult.file?.name?.replace(/\.\w+$/, '') || 'Untitled')
@@ -414,7 +516,7 @@ export default function EditorPage({ initialPublishId = '' }) {
     } finally {
       setIsPublishing(false)
     }
-  }, [failPublishProgress, finishPublishProgress, importResult, isEditingExistingPublish, publishId, requestPublishId, router, sceneConfig, startPublishProgress])
+  }, [clearPublishTimers, failPublishProgress, finishPublishProgress, importResult, isEditingExistingPublish, publishId, requestPublishId, router, sceneConfig])
 
   const handleReset = useCallback(() => {
     if (importResult?._blobUrls) {
