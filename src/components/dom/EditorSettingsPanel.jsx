@@ -29,9 +29,18 @@ const PLATFORM_COLORS = [
 /**
  * Right-side settings panel — Canva-style controls for environment, lighting, fog, platform.
  *
- * @param {{ config: object, onChange: (key: string, value: any) => void, onPublish: () => void, isPublishing: boolean }} props
+ * @param {{ config: object, onChange: (key: string, value: any) => void, onPublish: () => void, isPublishing: boolean, publishId?: string, publishIdError?: string, isAllocatingPublishId?: boolean, publishProgress?: object[] }} props
  */
-export default function EditorSettingsPanel({ config, onChange, onPublish, isPublishing = false }) {
+export default function EditorSettingsPanel({
+  config,
+  onChange,
+  onPublish,
+  isPublishing = false,
+  publishId = '',
+  publishIdError = null,
+  isAllocatingPublishId = false,
+  publishProgress = [],
+}) {
   const [expandedSection, setExpandedSection] = useState('environment')
 
   const toggle = (s) => setExpandedSection((prev) => prev === s ? null : s)
@@ -40,6 +49,8 @@ export default function EditorSettingsPanel({ config, onChange, onPublish, isPub
   const lighting = config.lighting ?? { ambient: { enabled: true, intensity: 0.35 }, lights: [] }
   const fog = config.fog ?? { enabled: false, color: '#0a0a0f', near: 10, far: 50 }
   const platform = config.platform ?? { enabled: true, color: '#e0e0e0', autoRotate: true, rotateSpeed: 0.12 }
+  const post = config.postprocessing ?? { enabled: true, glare: 0.18, grain: 0.04, vignette: 0.2, exposure: 1.1, contrast: 1, saturation: 1 }
+  const showPublishProgress = isPublishing || publishProgress.some((step) => step.status !== 'pending')
 
   return (
     <div className='az-panel-right'>
@@ -49,10 +60,29 @@ export default function EditorSettingsPanel({ config, onChange, onPublish, isPub
           className='az-btn az-btn--primary'
           style={{ width: '100%', justifyContent: 'center', padding: '10px 16px', fontSize: 14 }}
           onClick={onPublish}
-          disabled={isPublishing}
+          disabled={isPublishing || isAllocatingPublishId}
         >
           {isPublishing ? '⏳ Publishing…' : '🚀 Publish'}
         </button>
+        <div className='az-publish-state'>
+          <div className='az-publish-id-row'>
+            <span>URL ID</span>
+            <code>{isAllocatingPublishId ? 'creating...' : publishId || 'unavailable'}</code>
+          </div>
+          {publishIdError && (
+            <div className='az-publish-id-error'>{publishIdError}</div>
+          )}
+          {showPublishProgress && (
+            <div className='az-publish-progress' role='status' aria-live='polite'>
+              {publishProgress.map((step) => (
+                <div key={step.id} className={`az-publish-progress-step az-publish-progress-step--${step.status}`}>
+                  <span className='az-publish-progress-dot' />
+                  <span>{step.label}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
       </div>
 
       {/* ─── Environment / HDRI ──────────────────────────────────────── */}
@@ -108,6 +138,12 @@ export default function EditorSettingsPanel({ config, onChange, onPublish, isPub
               })}
             />
           </label>
+          <SliderRow
+            label='Light Intensity'
+            value={lighting.intensity ?? 1}
+            min={0.2} max={2.5} step={0.05}
+            onChange={(v) => onChange('lighting', { ...lighting, intensity: v })}
+          />
           <SliderRow
             label='Ambient Intensity'
             value={lighting.ambient?.intensity ?? 0.35}
@@ -235,6 +271,61 @@ export default function EditorSettingsPanel({ config, onChange, onPublish, isPub
               ))}
             </div>
           </div>
+        </div>
+      )}
+
+      <SectionHeader
+        title='Post FX'
+        icon='FX'
+        expanded={expandedSection === 'postprocessing'}
+        onClick={() => toggle('postprocessing')}
+      />
+      {expandedSection === 'postprocessing' && (
+        <div className='az-settings-body'>
+          <label className='az-toggle-row'>
+            <span>Enable Effects</span>
+            <input
+              type='checkbox'
+              checked={post.enabled ?? true}
+              onChange={(e) => onChange('postprocessing', { ...post, enabled: e.target.checked })}
+            />
+          </label>
+          <SliderRow
+            label='Glare'
+            value={post.glare ?? 0.18}
+            min={0} max={2} step={0.05}
+            onChange={(v) => onChange('postprocessing', { ...post, glare: v })}
+          />
+          <SliderRow
+            label='Grain'
+            value={post.grain ?? 0.04}
+            min={0} max={0.4} step={0.01}
+            onChange={(v) => onChange('postprocessing', { ...post, grain: v })}
+          />
+          <SliderRow
+            label='Vignette'
+            value={post.vignette ?? 0.2}
+            min={0} max={1} step={0.02}
+            onChange={(v) => onChange('postprocessing', { ...post, vignette: v })}
+          />
+          <SliderRow
+            label='Exposure'
+            value={post.exposure ?? 1.1}
+            min={0.5} max={1.8} step={0.05}
+            onChange={(v) => onChange('postprocessing', { ...post, exposure: v })}
+          />
+          <SliderRow
+            label='Contrast'
+            value={post.contrast ?? 1}
+            min={0.5} max={1.8} step={0.05}
+            onChange={(v) => onChange('postprocessing', { ...post, contrast: v })}
+          />
+          <SliderRow
+            label='Saturation'
+            value={post.saturation ?? 1}
+            min={0.2} max={1.8} step={0.05}
+            onChange={(v) => onChange('postprocessing', { ...post, saturation: v })}
+          />
         </div>
       )}
     </div>

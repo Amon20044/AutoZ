@@ -1,7 +1,8 @@
 'use client'
 
-import { useCallback, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import dynamic from 'next/dynamic'
+import { useRouter } from 'next/navigation'
 import './editor.css'
 
 import ModelUploader from '@/components/dom/ModelUploader'
@@ -21,6 +22,7 @@ const CarViewer = dynamic(
 const DEFAULT_CONFIG = {
   environment: { preset: 'studio', background: false },
   lighting: {
+    intensity: 1,
     ambient: { enabled: true, color: '#ffffff', intensity: 0.35 },
     lights: [
       { type: 'directional', position: [4, 6, -4], intensity: 2.2, color: '#ffffff', castShadow: true },
@@ -31,9 +33,105 @@ const DEFAULT_CONFIG = {
   fog: { enabled: false, color: '#0a0a0f', near: 10, far: 50 },
   platform: { enabled: true, color: '#e0e0e0', autoRotate: true, rotateSpeed: 0.12, metalness: 0.92, roughness: 0.04, radius: 3 },
   camera: { fov: 40, position: [5, 3, -7] },
+  postprocessing: { enabled: true, glare: 0.18, grain: 0.04, vignette: 0.2, exposure: 1.1, contrast: 1, saturation: 1 },
 }
 
-export default function EditorPage() {
+const DRAFT_PUBLISH_ID_STORAGE_KEY = 'autoz:draft-publish-id'
+
+const TEXTURE_EXTENSIONS = new Set([
+  'avif',
+  'basis',
+  'hdr',
+  'jpeg',
+  'jpg',
+  'ktx',
+  'ktx2',
+  'png',
+  'tga',
+  'webp',
+])
+
+const PUBLISH_PROGRESS_STEPS = [
+  { id: 'id', label: 'Checking URL ID' },
+  { id: 'model', label: 'Uploading model' },
+  { id: 'textures', label: 'Uploading textures' },
+  { id: 'scene', label: 'Finalizing scene' },
+  { id: 'ready', label: 'Ready to publish' },
+]
+
+const buildPublishProgress = (activeIndex = -1, failedIndex = -1) =>
+  PUBLISH_PROGRESS_STEPS.map((step, index) => ({
+    ...step,
+    status: failedIndex === index
+      ? 'error'
+      : activeIndex === -1
+        ? 'pending'
+        : index < activeIndex
+          ? 'done'
+          : index === activeIndex
+            ? 'running'
+            : 'pending',
+  }))
+
+const isTextureFile = (file) => {
+  const ext = file.name.split('.').pop()?.toLowerCase()
+  return Boolean(ext && TEXTURE_EXTENSIONS.has(ext))
+}
+
+const mergeSceneConfigFromSnapshot = (snapshot = {}) => ({
+  ...DEFAULT_CONFIG,
+  environment: { ...DEFAULT_CONFIG.environment, ...(snapshot.environment ?? {}) },
+  lighting: {
+    ...DEFAULT_CONFIG.lighting,
+    ...(snapshot.lighting ?? {}),
+    ambient: { ...DEFAULT_CONFIG.lighting.ambient, ...(snapshot.lighting?.ambient ?? {}) },
+    lights: snapshot.lighting?.lights ?? DEFAULT_CONFIG.lighting.lights,
+  },
+  fog: { ...DEFAULT_CONFIG.fog, ...(snapshot.fog ?? {}) },
+  platform: { ...DEFAULT_CONFIG.platform, ...(snapshot.platform ?? {}) },
+  camera: { ...DEFAULT_CONFIG.camera, ...(snapshot.camera ?? {}) },
+  postprocessing: { ...DEFAULT_CONFIG.postprocessing, ...(snapshot.postprocessing ?? {}) },
+})
+
+async function fetchSnapshotFileEntry({ url, path, fileName }) {
+  const res = await fetch(url)
+  if (!res.ok) throw new Error(`Could not load ${fileName || path || 'asset'}`)
+
+  const blob = await res.blob()
+  const name = fileName || path?.split('/').pop() || 'asset'
+  return {
+    path: path || name,
+    file: new File([blob], name, { type: blob.type || '' }),
+  }
+}
+
+async function buildSnapshotFileEntries(snapshot) {
+  if (!snapshot.model?.url) return []
+
+  const modelPath = snapshot.model.path || snapshot.model.fileName || 'model.glb'
+  const entries = [
+    await fetchSnapshotFileEntry({
+      url: snapshot.model.url,
+      path: modelPath,
+      fileName: snapshot.model.fileName || modelPath.split('/').pop(),
+    }),
+  ]
+
+  const runtimeAssets = snapshot.runtimeAssets ?? []
+  const runtimeEntries = await Promise.all(runtimeAssets
+    .filter((asset) => asset.url && asset.path !== modelPath)
+    .map((asset) => fetchSnapshotFileEntry({
+      url: asset.url,
+      path: asset.path,
+      fileName: asset.originalName || asset.path?.split('/').pop(),
+    })))
+
+  entries.push(...runtimeEntries)
+  return entries
+}
+
+export default function EditorPage({ initialPublishId = '' }) {
+  const router = useRouter()
   // ─── State ──────────────────────────────────────────────────────────────
   const [phase, setPhase] = useState('upload') // 'upload' | 'processing' | 'ready'
   const [importResult, setImportResult] = useState(null)
@@ -41,19 +139,126 @@ export default function EditorPage() {
   const [error, setError] = useState(null)
   const [sceneConfig, setSceneConfig] = useState({ ...DEFAULT_CONFIG })
   const [isPublishing, setIsPublishing] = useState(false)
+  const [publishId, setPublishId] = useState('')
+  const [publishIdError, setPublishIdError] = useState(null)
+  const [isAllocatingPublishId, setIsAllocatingPublishId] = useState(true)
+  const [isEditingExistingPublish, setIsEditingExistingPublish] = useState(Boolean(initialPublishId))
+  const [publishProgress, setPublishProgress] = useState(() => buildPublishProgress())
   const [publishResult, setPublishResult] = useState(null) // { slug, embedCode, frameUrl }
   const [toast, setToast] = useState(null)
 
   const interactionRef = useRef(new InteractionEngine())
   const modelFileRef = useRef(null) // Store the original file for publish upload
+  const modelEntryRef = useRef(null)
+  const droppedFilesRef = useRef([])
+  const publishTimersRef = useRef([])
+
+  const clearPublishTimers = useCallback(() => {
+    publishTimersRef.current.forEach((timer) => window.clearTimeout(timer))
+    publishTimersRef.current = []
+  }, [])
+
+  const requestPublishId = useCallback(async ({ replaceStored = false } = {}) => {
+    setIsAllocatingPublishId(true)
+    setPublishIdError(null)
+
+    try {
+      if (!replaceStored) {
+        const storedId = window.localStorage.getItem(DRAFT_PUBLISH_ID_STORAGE_KEY)
+        if (storedId) {
+          setPublishId(storedId)
+          setIsAllocatingPublishId(false)
+          return storedId
+        }
+      }
+
+      const res = await fetch('/api/publish/id', { cache: 'no-store' })
+      const json = await res.json()
+      if (!res.ok) throw new Error(json.error || 'Could not create publish ID')
+
+      window.localStorage.setItem(DRAFT_PUBLISH_ID_STORAGE_KEY, json.publishId)
+      setPublishId(json.publishId)
+      return json.publishId
+    } catch (err) {
+      setPublishIdError(err.message)
+      return ''
+    } finally {
+      setIsAllocatingPublishId(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    let active = true
+
+    if (initialPublishId) {
+      window.localStorage.setItem(DRAFT_PUBLISH_ID_STORAGE_KEY, initialPublishId)
+      setPublishId(initialPublishId)
+      setIsAllocatingPublishId(false)
+      setIsEditingExistingPublish(true)
+      return () => {
+        active = false
+        clearPublishTimers()
+      }
+    }
+
+    requestPublishId().then((id) => {
+      if (!active || !id) return
+      setPublishId(id)
+    })
+
+    return () => {
+      active = false
+      clearPublishTimers()
+    }
+  }, [clearPublishTimers, initialPublishId, requestPublishId])
+
+  const startPublishProgress = useCallback(() => {
+    clearPublishTimers()
+    setPublishProgress(buildPublishProgress(0))
+
+    const schedule = (index, delay) => {
+      const timer = window.setTimeout(() => {
+        setPublishProgress(buildPublishProgress(index))
+      }, delay)
+      publishTimersRef.current.push(timer)
+    }
+
+    schedule(1, 250)
+    schedule(2, 1100)
+    schedule(3, 1900)
+  }, [clearPublishTimers])
+
+  const finishPublishProgress = useCallback(() => {
+    clearPublishTimers()
+    setPublishProgress(PUBLISH_PROGRESS_STEPS.map((step) => ({ ...step, status: 'done' })))
+  }, [clearPublishTimers])
+
+  const failPublishProgress = useCallback(() => {
+    clearPublishTimers()
+    setPublishProgress((steps) => {
+      const runningIndex = Math.max(steps.findIndex((step) => step.status === 'running'), 0)
+      return buildPublishProgress(runningIndex, runningIndex)
+    })
+  }, [clearPublishTimers])
 
   // ─── File Upload → Pipeline ─────────────────────────────────────────────
   const handleFiles = useCallback(async (files) => {
     setPhase('processing')
     setError(null)
+    setPublishResult(null)
+    setPublishProgress(buildPublishProgress())
+    droppedFilesRef.current = files
+    modelFileRef.current = null
+    modelEntryRef.current = null
     // Store first model file for publish
-    const modelEntry = files.find(f => f.file.name.endsWith('.glb') || f.file.name.endsWith('.gltf'))
-    if (modelEntry) modelFileRef.current = modelEntry.file
+    const modelEntry = files.find((f) => {
+      const name = f.file.name.toLowerCase()
+      return name.endsWith('.glb') || name.endsWith('.gltf')
+    })
+    if (modelEntry) {
+      modelFileRef.current = modelEntry.file
+      modelEntryRef.current = modelEntry
+    }
     try {
       const result = await runImportPipeline(files)
       setImportResult(result)
@@ -63,6 +268,43 @@ export default function EditorPage() {
       setPhase('upload')
     }
   }, [])
+
+  useEffect(() => {
+    if (!initialPublishId) return undefined
+
+    let active = true
+
+    ;(async () => {
+      try {
+        setError(null)
+        setPhase('processing')
+
+        const res = await fetch(`/api/project/${initialPublishId}`, { cache: 'no-store' })
+        const json = await res.json()
+        if (!res.ok) throw new Error(json.error || 'Could not load saved project')
+
+        const snapshot = json.publish.snapshot
+        setSceneConfig(mergeSceneConfigFromSnapshot(snapshot))
+
+        const entries = await buildSnapshotFileEntries(snapshot)
+        if (!active) return
+
+        if (entries.length > 0) {
+          await handleFiles(entries)
+        } else {
+          setPhase('upload')
+        }
+      } catch (err) {
+        if (!active) return
+        setError(err.message)
+        setPhase('upload')
+      }
+    })()
+
+    return () => {
+      active = false
+    }
+  }, [handleFiles, initialPublishId])
 
   // ─── Part Interactions ──────────────────────────────────────────────────
   const handlePartClick = useCallback((part) => {
@@ -85,9 +327,26 @@ export default function EditorPage() {
     if (!importResult || !modelFileRef.current) return
 
     setIsPublishing(true)
+    setError(null)
+    setPublishResult(null)
+    startPublishProgress()
+
     try {
+      const activePublishId = publishId || await requestPublishId({ replaceStored: true })
+      if (!activePublishId) {
+        throw new Error('Publish ID is not ready yet. Please try again.')
+      }
+
+      const resourceEntries = droppedFilesRef.current.filter((entry) => (
+        entry.file !== modelFileRef.current
+      ))
+      const resourcePaths = resourceEntries.map((entry) => entry.path || entry.file.name)
+
       const formData = new FormData()
       formData.append('model', modelFileRef.current)
+      formData.append('modelPath', modelEntryRef.current?.path || modelFileRef.current.name)
+      formData.append('publishId', activePublishId)
+      formData.append('updateExisting', isEditingExistingPublish ? 'true' : 'false')
       formData.append('name', importResult.file?.name?.replace(/\.\w+$/, '') || 'Untitled')
       formData.append('config', JSON.stringify({
         ...sceneConfig,
@@ -97,39 +356,57 @@ export default function EditorPage() {
           sourceForward: importResult.normResult?.sourceForward,
         },
       }))
+      formData.append('resourcePaths', JSON.stringify(resourcePaths))
+      resourceEntries.forEach((entry) => {
+        formData.append('resources', entry.file)
+        if (isTextureFile(entry.file)) formData.append('textures', entry.file)
+      })
 
       const res = await fetch('/api/publish', { method: 'POST', body: formData })
       const json = await res.json()
 
       if (!res.ok) throw new Error(json.error || 'Publish failed')
 
+      finishPublishProgress()
+      setPublishId(json.slug)
+      setIsEditingExistingPublish(true)
+      window.localStorage.removeItem(DRAFT_PUBLISH_ID_STORAGE_KEY)
+      router.replace(`/editor/${json.slug}`)
       setPublishResult({
         slug: json.slug,
         frameUrl: json.frameUrl,
+        editorUrl: json.editorUrl,
         embedCode: json.embedCode,
       })
       // show a short toast confirming publish and copy-ready URL
       setToast(`Published: ${json.frameUrl}`)
       setTimeout(() => setToast(null), 6000)
     } catch (err) {
+      failPublishProgress()
       setError(err.message)
     } finally {
       setIsPublishing(false)
     }
-  }, [importResult, sceneConfig])
+  }, [failPublishProgress, finishPublishProgress, importResult, isEditingExistingPublish, publishId, requestPublishId, router, sceneConfig, startPublishProgress])
 
   const handleReset = useCallback(() => {
     if (importResult?._blobUrls) {
       for (const url of importResult._blobUrls) URL.revokeObjectURL(url)
     }
     modelFileRef.current = null
+    modelEntryRef.current = null
+    droppedFilesRef.current = []
     setImportResult(null)
     setPhase('upload')
     setActivePart(null)
     setError(null)
     setSceneConfig({ ...DEFAULT_CONFIG })
+    setPublishProgress(buildPublishProgress())
     setPublishResult(null)
-  }, [importResult])
+    setIsEditingExistingPublish(false)
+    router.replace('/editor')
+    requestPublishId({ replaceStored: true })
+  }, [importResult, requestPublishId, router])
 
   // ─── Derived ────────────────────────────────────────────────────────────
   const registry = importResult?.registry ?? null
@@ -149,10 +426,13 @@ export default function EditorPage() {
           <div className='az-topbar-brand-dot' />
           <span>AutoZ Engine</span>
           {importResult?.file && (
-            <span style={{ color: 'var(--az-text-dim)', fontWeight: 400, fontSize: 13 }}>
+            <span className='az-topbar-file'>
               &nbsp;— {importResult.file.name}
             </span>
           )}
+          <span className='az-topbar-id'>
+            {isAllocatingPublishId ? 'ID creating...' : publishId ? `ID ${publishId}` : 'ID unavailable'}
+          </span>
         </div>
         <div className='az-topbar-actions'>
           {isReady && (
@@ -161,7 +441,7 @@ export default function EditorPage() {
               <button
                 className='az-btn az-btn--primary'
                 onClick={handlePublish}
-                disabled={isPublishing}
+                disabled={isPublishing || isAllocatingPublishId}
               >
                 {isPublishing ? '⏳ Publishing…' : '🚀 Publish'}
               </button>
@@ -223,7 +503,7 @@ export default function EditorPage() {
 
         {/* Center — upload zone OR 3D viewport */}
         {phase === 'upload' ? (
-          <div style={{ position: 'relative' }}>
+          <div className='az-center-stage'>
             <ModelUploader onFilesReady={handleFiles} />
             {error && (
               <div style={{
@@ -238,7 +518,7 @@ export default function EditorPage() {
             )}
           </div>
         ) : (
-          <div style={{ position: 'relative' }}>
+          <div className='az-center-stage'>
             <CarViewer
               normalizedRoot={importResult?.normalizedRoot ?? null}
               registry={registry}
@@ -268,6 +548,10 @@ export default function EditorPage() {
             onChange={handleConfigChange}
             onPublish={handlePublish}
             isPublishing={isPublishing}
+            publishId={publishId}
+            publishIdError={publishIdError}
+            isAllocatingPublishId={isAllocatingPublishId}
+            publishProgress={publishProgress}
           />
         )}
       </div>

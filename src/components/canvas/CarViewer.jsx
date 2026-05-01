@@ -12,6 +12,7 @@ import StudioPlatform from './StudioPlatform'
 import StudioLights from './StudioLights'
 import CarModel from './CarModel'
 import PartButtons from './PartButtons'
+import PostProcessing, { RendererSettings } from './PostProcessing'
 
 /**
  * Full 3D viewport canvas — assembles the studio scene.
@@ -32,6 +33,7 @@ export default function CarViewer({
   const fog = sceneConfig.fog ?? { enabled: false }
   const platform = sceneConfig.platform ?? {}
   const cam = sceneConfig.camera ?? {}
+  const post = sceneConfig.postprocessing ?? {}
 
   return (
     <div className='az-viewport'>
@@ -42,7 +44,7 @@ export default function CarViewer({
           alpha: true,
           powerPreference: 'high-performance',
           toneMapping: THREE.ACESFilmicToneMapping,
-          toneMappingExposure: 1.1,
+          toneMappingExposure: post.exposure ?? 1.1,
           outputColorSpace: THREE.SRGBColorSpace,
         }}
         dpr={[1, 1.75]}
@@ -69,6 +71,7 @@ export default function CarViewer({
         />
 
         <AdaptiveDpr pixelated />
+        <RendererSettings exposure={post.exposure ?? 1.1} />
 
         {/* HDRI environment — responds to config changes */}
         <Environment preset={env.preset ?? 'studio'} background={env.background ?? false} />
@@ -119,6 +122,7 @@ export default function CarViewer({
         </Suspense>
 
         <Preload all />
+        {post.enabled !== false && <PostProcessing config={post} />}
       </Canvas>
 
       {/* Viewport stats overlay */}
@@ -147,11 +151,12 @@ export default function CarViewer({
 function ConfigurableLights({ lighting }) {
   const ambient = lighting?.ambient ?? { enabled: true, intensity: 0.35 }
   const lights = lighting?.lights ?? []
+  const lightIntensity = lighting?.intensity ?? 1
 
   return (
     <>
       {ambient.enabled && (
-        <ambientLight color={ambient.color ?? '#ffffff'} intensity={ambient.intensity ?? 0.35} />
+        <ambientLight color={ambient.color ?? '#ffffff'} intensity={(ambient.intensity ?? 0.35) * lightIntensity} />
       )}
       {lights.map((l, i) => {
         if (l.type === 'directional') {
@@ -159,7 +164,7 @@ function ConfigurableLights({ lighting }) {
             <directionalLight
               key={i}
               position={l.position}
-              intensity={l.intensity}
+              intensity={(l.intensity ?? 1) * lightIntensity}
               color={l.color}
               castShadow={l.castShadow ?? false}
               shadow-mapSize-width={1024}
@@ -168,7 +173,7 @@ function ConfigurableLights({ lighting }) {
           )
         }
         if (l.type === 'point') {
-          return <pointLight key={i} position={l.position} intensity={l.intensity} color={l.color} />
+          return <pointLight key={i} position={l.position} intensity={(l.intensity ?? 1) * lightIntensity} color={l.color} />
         }
         return null
       })}

@@ -7,6 +7,7 @@ import {
   ContactShadows, AdaptiveDpr, useGLTF,
 } from '@react-three/drei'
 import * as THREE from 'three'
+import PostProcessing, { RendererSettings } from './PostProcessing'
 
 /**
  * Lightweight frame viewer canvas — loads published snapshot and renders.
@@ -16,6 +17,7 @@ export default function FrameCanvas({ snapshot }) {
   const platform = snapshot.platform ?? {}
   const fog = snapshot.fog ?? {}
   const cam = snapshot.camera ?? {}
+  const post = snapshot.postprocessing ?? {}
 
   return (
     <Canvas
@@ -23,7 +25,7 @@ export default function FrameCanvas({ snapshot }) {
       gl={{
         antialias: true,
         toneMapping: THREE.ACESFilmicToneMapping,
-        toneMappingExposure: 1.1,
+        toneMappingExposure: post.exposure ?? 1.1,
         outputColorSpace: THREE.SRGBColorSpace,
       }}
       dpr={[1, 1.75]}
@@ -36,6 +38,7 @@ export default function FrameCanvas({ snapshot }) {
         far={100}
         position={cam.position ?? [5, 3, -7]}
       />
+      <RendererSettings exposure={post.exposure ?? 1.1} />
 
       <OrbitControls
         enableDamping
@@ -52,7 +55,7 @@ export default function FrameCanvas({ snapshot }) {
       <AdaptiveDpr pixelated />
 
       {/* Environment */}
-      <Environment preset={snapshot.environment?.preset ?? 'studio'} background={false} />
+      <Environment preset={snapshot.environment?.preset ?? 'studio'} background={snapshot.environment?.background ?? false} />
 
       {/* Fog */}
       {fog.enabled && <fog attach='fog' args={[fog.color ?? '#0a0a0f', fog.near ?? 10, fog.far ?? 50]} />}
@@ -79,6 +82,7 @@ export default function FrameCanvas({ snapshot }) {
 
       {/* Contact shadows */}
       <ContactShadows position={[0, -0.001, 0]} opacity={0.5} blur={1.8} far={6} resolution={512} frames={1} color='#0a0a12' />
+      {post.enabled !== false && <PostProcessing config={post} />}
     </Canvas>
   )
 }
@@ -86,6 +90,8 @@ export default function FrameCanvas({ snapshot }) {
 // ─── Sub-components ──────────────────────────────────────────────────────────
 
 function SnapshotLights({ lighting }) {
+  const lightIntensity = lighting?.intensity ?? 1
+
   if (!lighting) {
     return (
       <>
@@ -100,7 +106,7 @@ function SnapshotLights({ lighting }) {
   return (
     <>
       {lighting.ambient?.enabled && (
-        <ambientLight color={lighting.ambient.color} intensity={lighting.ambient.intensity} />
+        <ambientLight color={lighting.ambient.color} intensity={(lighting.ambient.intensity ?? 0.35) * lightIntensity} />
       )}
       {(lighting.lights ?? []).map((l, i) => {
         if (l.type === 'directional') {
@@ -108,14 +114,14 @@ function SnapshotLights({ lighting }) {
             <directionalLight
               key={i}
               position={l.position}
-              intensity={l.intensity}
+              intensity={(l.intensity ?? 1) * lightIntensity}
               color={l.color}
               castShadow={l.castShadow}
             />
           )
         }
         if (l.type === 'point') {
-          return <pointLight key={i} position={l.position} intensity={l.intensity} color={l.color} />
+          return <pointLight key={i} position={l.position} intensity={(l.intensity ?? 1) * lightIntensity} color={l.color} />
         }
         return null
       })}
