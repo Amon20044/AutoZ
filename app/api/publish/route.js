@@ -189,12 +189,18 @@ export async function POST(request) {
       include: { publishes: true },
     })
 
+    // Prefer an explicit public base URL from env for hosted deployments,
+    // otherwise fall back to request-derived base URL.
+    const publicBase = process.env.NEXT_PUBLIC_BASE_URL || getBaseUrl(request)
+    const absFrame = `${publicBase}/frame/${slug}`
+
     return NextResponse.json({
       success: true,
       projectId: project.id,
       slug,
-      frameUrl: `/frame/${slug}`,
-      embedCode: `<iframe src="${getBaseUrl(request)}/frame/${slug}" width="100%" height="600" frameborder="0" allowfullscreen></iframe>`,
+      // Return absolute frame URL so clients and external sites can use it
+      frameUrl: absFrame,
+      embedCode: `<iframe src="${absFrame}" width="100%" height="600" frameborder="0" allowfullscreen></iframe>`,
     })
 
   } catch (err) {

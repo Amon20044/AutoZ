@@ -42,6 +42,7 @@ export default function EditorPage() {
   const [sceneConfig, setSceneConfig] = useState({ ...DEFAULT_CONFIG })
   const [isPublishing, setIsPublishing] = useState(false)
   const [publishResult, setPublishResult] = useState(null) // { slug, embedCode, frameUrl }
+  const [toast, setToast] = useState(null)
 
   const interactionRef = useRef(new InteractionEngine())
   const modelFileRef = useRef(null) // Store the original file for publish upload
@@ -107,6 +108,9 @@ export default function EditorPage() {
         frameUrl: json.frameUrl,
         embedCode: json.embedCode,
       })
+      // show a short toast confirming publish and copy-ready URL
+      setToast(`Published: ${json.frameUrl}`)
+      setTimeout(() => setToast(null), 6000)
     } catch (err) {
       setError(err.message)
     } finally {
@@ -283,7 +287,7 @@ export default function EditorPage() {
                 borderRadius: 6, fontSize: 12, fontFamily: 'var(--az-mono)', color: 'var(--az-text)',
                 wordBreak: 'break-all'
               }}>
-                {window.location.origin}{publishResult.frameUrl}
+                {publishResult.frameUrl}
               </div>
             </div>
             <div style={{ marginBottom: 12 }}>
@@ -308,6 +312,15 @@ export default function EditorPage() {
                 Open Viewer ↗
               </a>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Simple toast */}
+      {toast && (
+        <div style={{ position: 'fixed', top: 16, right: 16, zIndex: 9999 }}>
+          <div style={{ background: 'rgba(34,197,94,0.95)', color: '#fff', padding: '10px 14px', borderRadius: 8, boxShadow: '0 6px 18px rgba(0,0,0,0.2)', fontFamily: 'var(--az-mono)' }}>
+            {toast}
           </div>
         </div>
       )}
