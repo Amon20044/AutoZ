@@ -97,12 +97,15 @@ export async function POST(request) {
     const completedParts = []
 
     try {
-      // Buffer stream into 8 MB chunks and upload each as an S3 part
+      // Buffer stream into fixed 8 MB parts and upload each as an S3 part.
+      // Web streams can yield arbitrarily large chunks, so each incoming value
+      // must be sliced instead of flushed whole once it crosses PART_SIZE.
       const reader = request.body.getReader()
       let partNumber = 0
       let chunkBuffer = [] // array of Uint8Array pieces
       let chunkSize = 0
-      const inFlight = [] // pending UploadPartCommand promises
+      const inFlight = new Set() // pending UploadPartCommand promises
+      let uploadError = null
 
       const uploadChunk = async (partNum, body) => {
         const result = await s3Client.send(
@@ -112,6 +115,7 @@ export async function POST(request) {
             UploadId: uploadId,
             PartNumber: partNum,
             Body: body,
+            ContentLength: body.length,
           }),
         )
         if (!result.ETag) throw new Error(`No ETag returned for part ${partNum}.`)
@@ -119,6 +123,8 @@ export async function POST(request) {
       }
 
       const flushChunk = async () => {
+        if (chunkSize <= 0) return
+
         partNumber += 1
         if (partNumber > MAX_PARTS) throw new Error('File too large — exceeds maximum S3 part limit.')
 
@@ -128,19 +134,45 @@ export async function POST(request) {
         chunkSize = 0
 
         const pn = partNumber
-        const promise = uploadChunk(pn, body).then((part) => {
-          completedParts.push(part)
-        })
-        inFlight.push(promise)
+        const promise = uploadChunk(pn, body).then(
+          (part) => {
+            completedParts.push(part)
+          },
+          (err) => {
+            uploadError = err
+            throw err
+          },
+        )
+        inFlight.add(promise)
+        promise
+          .finally(() => {
+            inFlight.delete(promise)
+          })
+          .catch(() => {
+            // The rejection is stored in uploadError and re-thrown by the main flow.
+          })
 
         // Throttle concurrency: wait until a slot is free
-        if (inFlight.length >= PART_CONCURRENCY) {
+        if (inFlight.size >= PART_CONCURRENCY) {
           await Promise.race(inFlight)
-          // Clean up resolved promises
-          for (let i = inFlight.length - 1; i >= 0; i--) {
-            if (await Promise.race([inFlight[i], Promise.resolve('pending')]) !== 'pending') {
-              inFlight.splice(i, 1)
-            }
+          if (uploadError) throw uploadError
+        }
+      }
+
+      const appendStreamChunk = async (value) => {
+        let offset = 0
+
+        while (offset < value.byteLength) {
+          const remainingInPart = PART_SIZE - chunkSize
+          const remainingInValue = value.byteLength - offset
+          const take = Math.min(remainingInPart, remainingInValue)
+
+          chunkBuffer.push(value.subarray(offset, offset + take))
+          chunkSize += take
+          offset += take
+
+          if (chunkSize === PART_SIZE) {
+            await flushChunk()
           }
         }
       }
@@ -149,21 +181,19 @@ export async function POST(request) {
         const { value, done } = await reader.read()
         if (done) break
 
-        chunkBuffer.push(value)
-        chunkSize += value.byteLength
-
-        if (chunkSize >= PART_SIZE) {
-          await flushChunk()
-        }
+        if (uploadError) throw uploadError
+        await appendStreamChunk(value)
       }
 
       // Flush remaining data as the final part
+      if (uploadError) throw uploadError
       if (chunkSize > 0) {
         await flushChunk()
       }
 
       // Wait for all in-flight uploads
-      await Promise.all(inFlight)
+      await Promise.all([...inFlight])
+      if (uploadError) throw uploadError
 
       // Sort parts by number (S3 requires ordered part list)
       completedParts.sort((a, b) => a.PartNumber - b.PartNumber)
