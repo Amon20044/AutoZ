@@ -1,0 +1,90 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ---------------------------------------------------------------------------
+// projects – Core entity. Every car viewer experience is a project.
+// ---------------------------------------------------------------------------
+model Project {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name      String   @db.Text
+  createdBy String?  @map("created_by") @db.Uuid
+  status    String   @default("draft") @db.Text
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  assets  Asset[]
+  configs ProjectConfig[]
+  publishes Publish[]
+
+  @@map("projects")
+}
+
+// ---------------------------------------------------------------------------
+// assets – Unified asset registry for both ImgBB images & Supabase Storage
+//          runtime files. Every URL is tracked here with its provider.
+// ---------------------------------------------------------------------------
+model Asset {
+  id              String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  projectId       String   @map("project_id") @db.Uuid
+  assetType       String   @map("asset_type") @db.Text
+  storageProvider String   @map("storage_provider") @db.Text
+  publicUrl       String   @map("public_url") @db.Text
+  storagePath     String?  @map("storage_path") @db.Text
+  mimeType        String?  @map("mime_type") @db.Text
+  fileName        String?  @map("file_name") @db.Text
+  fileSizeBytes   BigInt?  @map("file_size_bytes")
+  width           Int?
+  height          Int?
+  metadata        Json     @default("{}") @db.JsonB
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+
+  @@index([projectId])
+  @@index([assetType])
+  @@map("assets")
+}
+
+// ---------------------------------------------------------------------------
+// project_configs – Versioned draft configuration (editable).
+//                   Each save bumps the version.
+// ---------------------------------------------------------------------------
+model ProjectConfig {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  projectId String   @map("project_id") @db.Uuid
+  config    Json     @default("{}") @db.JsonB
+  version   Int      @default(1)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+
+  @@index([projectId])
+  @@map("project_configs")
+}
+
+// ---------------------------------------------------------------------------
+// publishes – Immutable published snapshots.
+//             Once created, a publish row is never updated.
+//             Re-publishing creates a new row with an incremented version.
+// ---------------------------------------------------------------------------
+model Publish {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  projectId   String   @map("project_id") @db.Uuid
+  publishSlug String   @unique @map("publish_slug") @db.Text
+  snapshot    Json     @db.JsonB
+  version     Int
+  isPublic    Boolean  @default(true) @map("is_public")
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+
+  @@index([projectId])
+  @@index([publishSlug])
+  @@map("publishes")
+}
