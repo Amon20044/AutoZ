@@ -7,6 +7,10 @@ import prisma from '@/config/prisma'
 
 export async function GET(request, { params }) {
   try {
+    if (!prisma) {
+      return NextResponse.json({ error: 'Database is not configured on this deployment.' }, { status: 500 })
+    }
+
     const { slug } = params
 
     const publish = await prisma.publish.findUnique({

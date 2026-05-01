@@ -18,6 +18,10 @@ import prisma from '@/config/prisma'
 
 export async function POST(request) {
   try {
+    if (!prisma) {
+      return NextResponse.json({ error: 'Database is not configured on this deployment.' }, { status: 500 })
+    }
+
     const formData = await request.formData()
 
     // ─── Extract fields ───────────────────────────────────────────────

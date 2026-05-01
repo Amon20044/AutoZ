@@ -9,15 +9,15 @@ const globalForPrisma = globalThis
 
 const connectionString = process.env.DATABASE_URL
 
-if (!connectionString) {
-  throw new Error('Missing required environment variable: DATABASE_URL')
+function createPrismaClient() {
+  if (!connectionString) return null
+  const adapter = new PrismaPg({ connectionString })
+  return new PrismaClient({ adapter })
 }
 
-const adapter = new PrismaPg({ connectionString })
+export const prisma = globalForPrisma.prisma ?? createPrismaClient()
 
-export const prisma = globalForPrisma.prisma ?? new PrismaClient({ adapter })
-
-if (process.env.NODE_ENV !== 'production') {
+if (process.env.NODE_ENV !== 'production' && prisma) {
   globalForPrisma.prisma = prisma
 }
 
