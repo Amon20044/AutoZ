@@ -47,6 +47,10 @@
     "three-stdlib": "^2.36.1",
     "tunnel-rat": "^0.1.2"
   },
+  "overrides": {
+    "react": "$react",
+    "react-dom": "$react-dom"
+  },
   "devDependencies": {
     "@next/bundle-analyzer": "^16.2.4",
     "@serwist/cli": "^9.5.10",

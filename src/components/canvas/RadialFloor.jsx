@@ -44,11 +44,8 @@ export default function RadialFloor({
     uOuter: { value: outer },
   }), [color, opacity, inner, outer])
 
-  const materialKey = `${color}:${opacity}:${inner}:${outer}`
-
   return (
     <mesh
-      key={materialKey}
       position={[0, y, 0]}
       rotation={[-Math.PI / 2, 0, 0]}
       renderOrder={-50}
