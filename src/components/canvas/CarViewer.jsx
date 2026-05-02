@@ -45,6 +45,8 @@ export default function CarViewer({
   const controlsRef = useRef(null)
   const [frameInfo, setFrameInfo] = useState(null)
   const cameraMode = sceneConfig.camera?.frame?.selectedMode ?? 'auto'
+  const editorPanEnabled = sceneConfig.camera?.frame?.editorPanEnabled !== false
+  const isCockpit = cameraMode === 'cockpit'
 
   useEffect(() => {
     if (!normalizedRoot) {
@@ -83,6 +85,7 @@ export default function CarViewer({
 
   return (
     <div className='az-viewport'>
+      <div className={`az-viewport-device az-viewport-device--${sceneConfig.camera?.frame?.editorPreviewDevice ?? 'desktop'}`}>
       <Canvas
         shadows={{ type: THREE.PCFShadowMap }}
         gl={{
@@ -108,11 +111,12 @@ export default function CarViewer({
           ref={controlsRef}
           enableDamping
           dampingFactor={0.1}
-          minPolarAngle={0.3}
-          maxPolarAngle={Math.PI / 2 - 0.05}
+          minPolarAngle={isCockpit ? Math.PI / 2 : 0.3}
+          maxPolarAngle={isCockpit ? Math.PI / 2 : Math.PI / 2 - 0.05}
           minDistance={0.05}
           maxDistance={12}
-          enablePan={false}
+          enablePan={editorPanEnabled}
+          panSpeed={0.55}
           touches={{ ONE: THREE.TOUCH.ROTATE, TWO: THREE.TOUCH.DOLLY_ROTATE }}
           target={orbitTarget}
           autoRotate={(animation.autoRotate ?? false) && (sceneConfig.camera?.frame?.selectedMode ?? 'auto') === 'auto'}
@@ -157,6 +161,7 @@ export default function CarViewer({
         <Preload all />
         {post.enabled !== false && <PostProcessing config={post} />}
       </Canvas>
+      </div>
 
       {sceneStats && (
         <div className='az-viewport-stats'>
@@ -173,7 +178,7 @@ export default function CarViewer({
       )}
 
       <div className='az-viewport-hint'>
-        Scroll to zoom - Drag to orbit - Click parts to interact
+        Drag to orbit - Shift drag to pan in editor - Scroll to zoom
       </div>
     </div>
   )
@@ -213,7 +218,9 @@ function EditorCameraRig({
       controls.minDistance = preset.minDistance
       controls.maxDistance = preset.maxDistance
       controls.autoRotate = mode === 'auto'
-      controls.enablePan = false
+      controls.enablePan = cameraConfig?.frame?.editorPanEnabled !== false
+      controls.minPolarAngle = mode === 'cockpit' ? Math.PI / 2 : 0.3
+      controls.maxPolarAngle = mode === 'cockpit' ? Math.PI / 2 : Math.PI / 2 - 0.05
       controls.enableDamping = true
       controls.dampingFactor = 0.08
     }
@@ -226,7 +233,9 @@ function EditorCameraRig({
 
     if (controls) {
       controls.autoRotate = mode === 'auto'
-      controls.enablePan = false
+      controls.enablePan = cameraConfig?.frame?.editorPanEnabled !== false
+      controls.minPolarAngle = mode === 'cockpit' ? Math.PI / 2 : 0.3
+      controls.maxPolarAngle = mode === 'cockpit' ? Math.PI / 2 : Math.PI / 2 - 0.05
       controls.minDistance = desired.current.minDistance
       controls.maxDistance = desired.current.maxDistance
       if (mode === 'auto') {

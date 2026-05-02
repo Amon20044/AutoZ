@@ -64,6 +64,8 @@ export const FRAME_CAMERA_MODES = Object.freeze([
 export const DEFAULT_FRAME_CAMERA_SETTINGS = Object.freeze({
   selectedMode: 'auto',
   mobileDistanceMultiplier: 1.4,
+  editorPreviewDevice: 'desktop',
+  editorPanEnabled: true,
   presets: {
     auto: { offset: [0, 0, 0], targetOffset: [0, 0, 0], distanceScale: 1 },
     cockpit: { offset: [0, 0, 0], targetOffset: [0, 0, 0], distanceScale: 1 },

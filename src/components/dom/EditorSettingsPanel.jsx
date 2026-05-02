@@ -418,6 +418,26 @@ export default function EditorSettingsPanel({
       {expandedSection === 'camera' && (
         <div className='az-settings-body'>
           <CameraMiniPreview mode={selectedCameraMode} preset={selectedCameraPreset} />
+          <div className='az-preview-device-tabs' aria-label='Editor preview size'>
+            {['desktop', 'mobile'].map((device) => (
+              <button
+                key={device}
+                type='button'
+                className={frameCamera.editorPreviewDevice === device ? 'az-preview-device-tab az-preview-device-tab--active' : 'az-preview-device-tab'}
+                onClick={() => updateFrameCamera({ editorPreviewDevice: device })}
+              >
+                {device === 'desktop' ? 'Desktop full view' : 'Mobile preset'}
+              </button>
+            ))}
+          </div>
+          <label className='az-toggle-row'>
+            <span>Editor panning</span>
+            <input
+              type='checkbox'
+              checked={frameCamera.editorPanEnabled !== false}
+              onChange={(e) => updateFrameCamera({ editorPanEnabled: e.target.checked })}
+            />
+          </label>
           <div className='az-camera-mode-grid'>
             {FRAME_CAMERA_MODES.map((mode) => (
               <button

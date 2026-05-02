@@ -327,6 +327,8 @@ function FrameCameraRig({
       controls.maxDistance = preset.maxDistance
       controls.autoRotate = mode === 'auto'
       controls.enablePan = false
+      controls.minPolarAngle = mode === 'cockpit' ? Math.PI / 2 : 0.3
+      controls.maxPolarAngle = mode === 'cockpit' ? Math.PI / 2 : Math.PI / 2 - 0.05
       controls.enableDamping = true
       controls.dampingFactor = 0.08
     }
@@ -347,6 +349,8 @@ function FrameCameraRig({
       controls.minDistance = desired.current.minDistance
       controls.maxDistance = desired.current.maxDistance
       controls.enablePan = false
+      controls.minPolarAngle = mode === 'cockpit' ? Math.PI / 2 : 0.3
+      controls.maxPolarAngle = mode === 'cockpit' ? Math.PI / 2 : Math.PI / 2 - 0.05
       controls.autoRotate = mode === 'auto'
       if (mode === 'auto') {
         const distance = camera.position.distanceTo(controls.target)
