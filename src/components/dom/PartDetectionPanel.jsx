@@ -1,11 +1,43 @@
 'use client'
 
-/** Part type → emoji icon mapping */
+import {
+  Armchair,
+  CircleHelp,
+  Disc3,
+  DoorOpen,
+  Fuel,
+  Gauge,
+  GlassWater,
+  Lightbulb,
+  PackageOpen,
+  Palette,
+  PanelTop,
+  Play,
+  ScanLine,
+  Shield,
+  Sparkles,
+  Sun,
+  Wrench,
+  X,
+} from 'lucide-react'
+
 const PART_ICONS = {
-  body: '🚗', door: '🚪', bonnet: '🔧', trunk: '📦',
-  light: '💡', wheel: '⚙️', rim: '🔩', mirror: '🪞',
-  glass: '🪟', roof: '☀️', cap: '⛽', spoiler: '🏎️',
-  bumper: '🛡️', grille: '🔲', interior: '💺', unknown: '❓',
+  body: Palette,
+  door: DoorOpen,
+  bonnet: Wrench,
+  trunk: PackageOpen,
+  light: Lightbulb,
+  wheel: Disc3,
+  rim: Gauge,
+  mirror: ScanLine,
+  glass: GlassWater,
+  roof: Sun,
+  cap: Fuel,
+  spoiler: Sparkles,
+  bumper: Shield,
+  grille: PanelTop,
+  interior: Armchair,
+  unknown: CircleHelp,
 }
 
 /**
@@ -29,6 +61,7 @@ export default function PartDetectionPanel({ parts = [], activePart = null, onPa
         const isActive = activePart === part.id
         const isOpen = part.currentState === 'open' || part.currentState === 'on'
         const scoreClass = score >= 75 ? 'high' : score >= 50 ? 'mid' : 'low'
+        const Icon = PART_ICONS[part.category] ?? PART_ICONS.unknown
 
         return (
           <div
@@ -37,7 +70,7 @@ export default function PartDetectionPanel({ parts = [], activePart = null, onPa
             onClick={() => onPartClick?.(part.id)}
           >
             <div className='az-part-icon'>
-              {PART_ICONS[part.category] ?? PART_ICONS.unknown}
+              <Icon size={16} strokeWidth={2.1} aria-hidden='true' />
             </div>
             <div className='az-part-info'>
               <div className='az-part-name'>{part.label}</div>
@@ -53,7 +86,9 @@ export default function PartDetectionPanel({ parts = [], activePart = null, onPa
               onClick={(e) => { e.stopPropagation(); onToggle?.(part.id) }}
               title={isOpen ? 'Close / Off' : 'Open / On'}
             >
-              {isOpen ? '✕' : '▶'}
+              {isOpen
+                ? <X size={13} strokeWidth={2.3} aria-hidden='true' />
+                : <Play size={13} strokeWidth={2.3} aria-hidden='true' />}
             </button>
           </div>
         )

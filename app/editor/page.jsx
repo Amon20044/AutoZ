@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import dynamic from 'next/dynamic'
 import { useRouter } from 'next/navigation'
+import { Eye, EyeOff, LoaderCircle, RotateCcw, Send } from 'lucide-react'
 
 import ModelUploader from '@/components/dom/ModelUploader'
 import ProcessingLog from '@/components/dom/ProcessingLog'
@@ -310,6 +311,7 @@ export default function EditorPage({ initialPublishId = '' }) {
   const [uploadProgress, setUploadProgress] = useState(null)
   const [publishResult, setPublishResult] = useState(null) // { slug, embedCode, frameUrl }
   const [toast, setToast] = useState(null)
+  const [showPartLabels, setShowPartLabels] = useState(false)
 
   const interactionRef = useRef(new InteractionEngine())
   const modelFileRef = useRef(null) // Store the original file for publish upload
@@ -682,13 +684,38 @@ export default function EditorPage({ initialPublishId = '' }) {
         <div className='az-topbar-actions'>
           {isReady && (
             <>
-              <button className='az-btn' onClick={handleReset}>↻ New</button>
+              <button className='az-btn' onClick={handleReset}>
+                <RotateCcw size={14} strokeWidth={2.2} aria-hidden='true' />
+                <span>New</span>
+              </button>
+              <button
+                className={`az-btn ${showPartLabels ? 'az-btn--active' : ''}`}
+                onClick={() => setShowPartLabels((prev) => !prev)}
+                title={showPartLabels ? 'Hide part labels' : 'Show part labels'}
+              >
+                {showPartLabels
+                  ? <EyeOff size={14} strokeWidth={2.2} aria-hidden='true' />
+                  : <Eye size={14} strokeWidth={2.2} aria-hidden='true' />}
+                <span>{showPartLabels ? 'Hide Labels' : 'Show Labels'}</span>
+              </button>
               <button
                 className='az-btn az-btn--primary'
                 onClick={handlePublish}
                 disabled={isPublishing || isAllocatingPublishId}
               >
-                {isPublishing ? '⏳ Publishing…' : '🚀 Publish'}
+                {isPublishing
+                  ? (
+                    <>
+                      <LoaderCircle size={14} strokeWidth={2.2} aria-hidden='true' className='az-icon-spin' />
+                      <span>Publishing...</span>
+                    </>
+                  )
+                  : (
+                    <>
+                      <Send size={14} strokeWidth={2.2} aria-hidden='true' />
+                      <span>Publish</span>
+                    </>
+                  )}
               </button>
             </>
           )}
@@ -772,6 +799,7 @@ export default function EditorPage({ initialPublishId = '' }) {
               sceneConfig={sceneConfig}
               onPartClick={handlePartClick}
               onToggle={handleToggle}
+              showPartLabels={showPartLabels}
             />
 
             {/* Processing overlay */}

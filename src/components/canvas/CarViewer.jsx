@@ -26,6 +26,7 @@ export default function CarViewer({
   sceneConfig = {},
   onPartClick,
   onToggle,
+  showPartLabels = true,
 }) {
   const parts = registry?.interactive ?? []
   const env = sceneConfig.environment ?? { preset: 'studio', background: false }
@@ -116,7 +117,7 @@ export default function CarViewer({
                 interactionEngine={interactionEngine}
                 onPartClick={onPartClick}
               />
-              <PartButtons parts={parts} onToggle={onToggle} />
+              {showPartLabels && <PartButtons parts={parts} onToggle={onToggle} />}
             </>
           )}
         </Suspense>

@@ -1,6 +1,7 @@
 'use client'
 
 import { useCallback, useRef, useState } from 'react'
+import { CarFront, FileUp, FolderOpen } from 'lucide-react'
 
 /**
  * Recursively reads all files from a dropped directory entry.
@@ -140,7 +141,9 @@ export default function ModelUploader({ onFilesReady, disabled = false }) {
         tabIndex={0}
         aria-label='Upload 3D model'
       >
-        <div className='az-upload-icon'>🚗</div>
+        <div className='az-upload-icon'>
+          <CarFront size={34} strokeWidth={1.8} aria-hidden='true' />
+        </div>
         <div className='az-upload-title'>Drop your car model here</div>
         <div className='az-upload-sub'>
           Single <strong>.glb</strong> file, or drop an entire
@@ -157,14 +160,16 @@ export default function ModelUploader({ onFilesReady, disabled = false }) {
             onClick={(e) => { e.stopPropagation(); onClickFile() }}
             type='button'
           >
-            📄 Browse File
+            <FileUp size={14} strokeWidth={2.2} aria-hidden='true' />
+            <span>Browse File</span>
           </button>
           <button
             className='az-btn'
             onClick={(e) => { e.stopPropagation(); onClickFolder() }}
             type='button'
           >
-            📁 Browse Folder
+            <FolderOpen size={14} strokeWidth={2.2} aria-hidden='true' />
+            <span>Browse Folder</span>
           </button>
         </div>
 

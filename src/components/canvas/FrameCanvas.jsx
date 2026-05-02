@@ -7,6 +7,7 @@ import {
   ContactShadows, AdaptiveDpr, useGLTF,
 } from '@react-three/drei'
 import * as THREE from 'three'
+import { Disc3, Eye, EyeOff, Lightbulb } from 'lucide-react'
 import PostProcessing, { RendererSettings } from './PostProcessing'
 import PartButtons from './PartButtons'
 import { useAutoZEngine } from '@/engine/hooks/useAutoZEngine'
@@ -25,6 +26,7 @@ export default function FrameCanvas({ snapshot }) {
   const [wheelsOn, setWheelsOn] = useState(false)
   const [modelLoadProgress, setModelLoadProgress] = useState(null)
   const [modelReady, setModelReady] = useState(false)
+  const [showPartLabels, setShowPartLabels] = useState(false)
 
   const lightCount = runtime.registry?.lights.length ?? 0
   const wheelCount = runtime.registry?.wheelSpinParts.length ?? 0
@@ -91,6 +93,7 @@ export default function FrameCanvas({ snapshot }) {
               platform={snapshot.platform ?? {}}
               onReady={handleRuntimeReady}
               onProgress={setModelLoadProgress}
+              showPartLabels={showPartLabels}
             />
           )}
         </Suspense>
@@ -128,7 +131,9 @@ export default function FrameCanvas({ snapshot }) {
           disabled={!runtime.engine || lightCount === 0}
           title={lightCount > 0 ? 'Toggle lights' : 'No lights detected'}
         >
-          <span className='frame-control-icon'>L</span>
+          <span className='frame-control-icon'>
+            <Lightbulb size={13} strokeWidth={2.3} aria-hidden='true' />
+          </span>
           <span>Lights</span>
         </button>
         <button
@@ -138,15 +143,31 @@ export default function FrameCanvas({ snapshot }) {
           disabled={!runtime.engine || wheelCount === 0}
           title={wheelCount > 0 ? 'Toggle wheel spin' : 'No wheels detected'}
         >
-          <span className='frame-control-icon'>W</span>
+          <span className='frame-control-icon'>
+            <Disc3 size={13} strokeWidth={2.3} aria-hidden='true' />
+          </span>
           <span>Wheel Spin</span>
+        </button>
+        <button
+          type='button'
+          className={`frame-control ${showPartLabels ? 'frame-control--active' : ''}`}
+          onClick={() => setShowPartLabels((prev) => !prev)}
+          disabled={!runtime.engine}
+          title={showPartLabels ? 'Hide part labels' : 'Show part labels'}
+        >
+          <span className='frame-control-icon'>
+            {showPartLabels
+              ? <EyeOff size={13} strokeWidth={2.3} aria-hidden='true' />
+              : <Eye size={13} strokeWidth={2.3} aria-hidden='true' />}
+          </span>
+          <span>{showPartLabels ? 'Hide Labels' : 'Show Labels'}</span>
         </button>
       </div>
     </div>
   )
 }
 
-function FrameRuntimeLoader({ snapshot, platform, onReady, onProgress }) {
+function FrameRuntimeLoader({ snapshot, platform, onReady, onProgress, showPartLabels }) {
   const [modelUrl, setModelUrl] = useState(null)
   const [modelError, setModelError] = useState(null)
 
@@ -185,11 +206,12 @@ function FrameRuntimeLoader({ snapshot, platform, onReady, onProgress }) {
       platform={platform}
       modelUrl={modelUrl}
       onReady={onReady}
+      showPartLabels={showPartLabels}
     />
   )
 }
 
-function FrameRuntime({ snapshot, platform, modelUrl, onReady }) {
+function FrameRuntime({ snapshot, platform, modelUrl, onReady, showPartLabels }) {
   const gltf = useGLTF(modelUrl)
   const { engine, registry } = useAutoZEngine(snapshot, gltf)
 
@@ -200,7 +222,7 @@ function FrameRuntime({ snapshot, platform, modelUrl, onReady }) {
   return (
     <>
       <FramePlatform platform={platform} />
-      {registry && (
+      {registry && showPartLabels && (
         <PartButtons
           parts={registry.frameInteractive}
           onToggle={(partId) => engine?.toggle(partId)}

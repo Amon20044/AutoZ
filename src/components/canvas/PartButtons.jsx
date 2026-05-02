@@ -1,12 +1,36 @@
 'use client'
 
 import { Html } from '@react-three/drei'
+import {
+  Car,
+  Disc3,
+  DoorOpen,
+  Fuel,
+  Gauge,
+  GlassWater,
+  Lightbulb,
+  Palette,
+  PackageOpen,
+  ScanLine,
+  Shield,
+  Sparkles,
+  Wrench,
+} from 'lucide-react'
 
-/** Part category → icon */
 const ICONS = {
-  door: '🚪', bonnet: '🔧', trunk: '📦', light: '💡',
-  wheel: '⚙️', mirror: '🪞', glass: '🪟', cap: '⛽',
-  spoiler: '🏎️', body: '🎨', default: '⚡',
+  door: DoorOpen,
+  bonnet: Wrench,
+  trunk: PackageOpen,
+  light: Lightbulb,
+  wheel: Disc3,
+  rim: Gauge,
+  mirror: ScanLine,
+  glass: GlassWater,
+  cap: Fuel,
+  spoiler: Sparkles,
+  body: Palette,
+  bumper: Shield,
+  default: Car,
 }
 
 /**
@@ -21,7 +45,7 @@ export default function PartButtons({ parts = [], onToggle }) {
         if (!part.anchor || !part.visibleInUI) return null
 
         const isActive = part.currentState === 'open' || part.currentState === 'on'
-        const icon = ICONS[part.category] ?? ICONS.default
+        const Icon = ICONS[part.category] ?? ICONS.default
 
         return (
           <Html
@@ -38,7 +62,7 @@ export default function PartButtons({ parts = [], onToggle }) {
               title={`${part.label}: ${isActive ? 'Active' : 'Inactive'}`}
             >
               <span className={`az-3d-btn-dot ${isActive ? '' : 'az-3d-btn-dot--off'}`} />
-              <span>{icon}</span>
+              <Icon size={14} strokeWidth={2.2} aria-hidden='true' />
               <span>{part.label}</span>
             </button>
           </Html>

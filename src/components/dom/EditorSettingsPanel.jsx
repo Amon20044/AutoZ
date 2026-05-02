@@ -1,19 +1,39 @@
 'use client'
 
 import { useState } from 'react'
+import {
+  Building2,
+  ChevronDown,
+  Circle,
+  Clapperboard,
+  CloudFog,
+  Globe2,
+  Hotel,
+  House,
+  Lightbulb,
+  LoaderCircle,
+  MapPinHouse,
+  Moon,
+  Send,
+  SlidersHorizontal,
+  Sunrise,
+  Sunset,
+  Trees,
+  Warehouse,
+} from 'lucide-react'
 
 /** Available HDRI presets from drei */
 const HDRI_PRESETS = [
-  { id: 'studio', label: 'Studio', icon: '🎬', desc: 'Soft studio lighting' },
-  { id: 'sunset', label: 'Sunset', icon: '🌅', desc: 'Warm golden hour' },
-  { id: 'dawn', label: 'Dawn', icon: '🌄', desc: 'Cool morning light' },
-  { id: 'night', label: 'Night', icon: '🌙', desc: 'Dark showroom' },
-  { id: 'warehouse', label: 'Warehouse', icon: '🏭', desc: 'Industrial space' },
-  { id: 'forest', label: 'Forest', icon: '🌲', desc: 'Natural outdoor' },
-  { id: 'apartment', label: 'Apartment', icon: '🏠', desc: 'Interior space' },
-  { id: 'city', label: 'City', icon: '🏙️', desc: 'Urban reflections' },
-  { id: 'park', label: 'Park', icon: '🌳', desc: 'Open park' },
-  { id: 'lobby', label: 'Lobby', icon: '🏨', desc: 'Hotel lobby' },
+  { id: 'studio', label: 'Studio', icon: Clapperboard, desc: 'Soft studio lighting' },
+  { id: 'sunset', label: 'Sunset', icon: Sunset, desc: 'Warm golden hour' },
+  { id: 'dawn', label: 'Dawn', icon: Sunrise, desc: 'Cool morning light' },
+  { id: 'night', label: 'Night', icon: Moon, desc: 'Dark showroom' },
+  { id: 'warehouse', label: 'Warehouse', icon: Warehouse, desc: 'Industrial space' },
+  { id: 'forest', label: 'Forest', icon: Trees, desc: 'Natural outdoor' },
+  { id: 'apartment', label: 'Apartment', icon: House, desc: 'Interior space' },
+  { id: 'city', label: 'City', icon: Building2, desc: 'Urban reflections' },
+  { id: 'park', label: 'Park', icon: MapPinHouse, desc: 'Open park' },
+  { id: 'lobby', label: 'Lobby', icon: Hotel, desc: 'Hotel lobby' },
 ]
 
 /** Platform color presets */
@@ -63,7 +83,19 @@ export default function EditorSettingsPanel({
           onClick={onPublish}
           disabled={isPublishing || isAllocatingPublishId}
         >
-          {isPublishing ? '⏳ Publishing…' : '🚀 Publish'}
+          {isPublishing
+            ? (
+              <>
+                <LoaderCircle size={15} strokeWidth={2.2} aria-hidden='true' className='az-icon-spin' />
+                <span>Publishing...</span>
+              </>
+            )
+            : (
+              <>
+                <Send size={15} strokeWidth={2.2} aria-hidden='true' />
+                <span>Publish</span>
+              </>
+            )}
         </button>
         <div className='az-publish-state'>
           <div className='az-publish-id-row'>
@@ -92,7 +124,7 @@ export default function EditorSettingsPanel({
       {/* ─── Environment / HDRI ──────────────────────────────────────── */}
       <SectionHeader
         title='Environment'
-        icon='🌍'
+        icon={Globe2}
         expanded={expandedSection === 'environment'}
         onClick={() => toggle('environment')}
       />
@@ -100,15 +132,12 @@ export default function EditorSettingsPanel({
         <div className='az-settings-body'>
           <div className='az-hdri-grid'>
             {HDRI_PRESETS.map((h) => (
-              <button
+              <HdriPresetButton
                 key={h.id}
-                className={`az-hdri-card ${env.preset === h.id ? 'az-hdri-card--active' : ''}`}
+                preset={h}
+                active={env.preset === h.id}
                 onClick={() => onChange('environment', { ...env, preset: h.id })}
-                title={h.desc}
-              >
-                <span className='az-hdri-icon'>{h.icon}</span>
-                <span className='az-hdri-label'>{h.label}</span>
-              </button>
+              />
             ))}
           </div>
           <label className='az-toggle-row'>
@@ -125,7 +154,7 @@ export default function EditorSettingsPanel({
       {/* ─── Lighting ─────────────────────────────────────────────────── */}
       <SectionHeader
         title='Lighting'
-        icon='💡'
+        icon={Lightbulb}
         expanded={expandedSection === 'lighting'}
         onClick={() => toggle('lighting')}
       />
@@ -193,7 +222,7 @@ export default function EditorSettingsPanel({
       {/* ─── Fog ──────────────────────────────────────────────────────── */}
       <SectionHeader
         title='Fog'
-        icon='🌫️'
+        icon={CloudFog}
         expanded={expandedSection === 'fog'}
         onClick={() => toggle('fog')}
       />
@@ -233,7 +262,7 @@ export default function EditorSettingsPanel({
       {/* ─── Platform ─────────────────────────────────────────────────── */}
       <SectionHeader
         title='Platform'
-        icon='⚪'
+        icon={Circle}
         expanded={expandedSection === 'platform'}
         onClick={() => toggle('platform')}
       />
@@ -280,7 +309,7 @@ export default function EditorSettingsPanel({
 
       <SectionHeader
         title='Post FX'
-        icon='FX'
+        icon={SlidersHorizontal}
         expanded={expandedSection === 'postprocessing'}
         onClick={() => toggle('postprocessing')}
       />
@@ -422,11 +451,38 @@ function ProgressBar({ value, className = '' }) {
   )
 }
 
+function HdriPresetButton({ preset, active, onClick }) {
+  const Icon = preset.icon
+
+  return (
+    <button
+      className={`az-hdri-card ${active ? 'az-hdri-card--active' : ''}`}
+      onClick={onClick}
+      title={preset.desc}
+    >
+      <span className='az-hdri-icon'>
+        <Icon size={17} strokeWidth={2.1} aria-hidden='true' />
+      </span>
+      <span className='az-hdri-label'>{preset.label}</span>
+    </button>
+  )
+}
+
 function SectionHeader({ title, icon, expanded, onClick }) {
+  const Icon = icon
+
   return (
     <button className='az-settings-header' onClick={onClick}>
-      <span>{icon} {title}</span>
-      <span style={{ transform: expanded ? 'rotate(180deg)' : 'rotate(0)', transition: 'transform 200ms' }}>▾</span>
+      <span className='az-settings-header-label'>
+        <Icon size={13} strokeWidth={2.2} aria-hidden='true' />
+        <span>{title}</span>
+      </span>
+      <ChevronDown
+        size={14}
+        strokeWidth={2.2}
+        aria-hidden='true'
+        style={{ transform: expanded ? 'rotate(180deg)' : 'rotate(0)', transition: 'transform 200ms' }}
+      />
     </button>
   )
 }

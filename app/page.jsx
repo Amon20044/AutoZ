@@ -2,6 +2,24 @@
 
 import { useEffect, useRef } from 'react'
 import Link from 'next/link'
+import {
+  ArrowRight,
+  BadgeCheck,
+  ChartNoAxesColumnIncreasing,
+  Cloud,
+  DoorOpen,
+  FileCheck,
+  Globe2,
+  Lightbulb,
+  MousePointerClick,
+  Palette,
+  Paperclip,
+  Rocket,
+  Ruler,
+  Settings,
+  TimerReset,
+  Upload,
+} from 'lucide-react'
 
 const PROBLEMS = [
   { num: '01 / 04', title: 'Custom-coded viewers per car model', body: 'Every new vehicle requires bespoke Three.js work from scratch. Interactions, lighting, camera — all re-engineered every time.', cost: 'Avg. 8–12 weeks of dev time per vehicle' },
@@ -11,21 +29,21 @@ const PROBLEMS = [
 ]
 
 const STEPS = [
-  { num: '01', icon: '⬆', label: 'Step one', title: 'Upload & normalize your model', body: 'Drop a GLB or GLTF. AutoZ runs the full normalization pipeline — unit conversion, centering, ground alignment, forward direction correction.', time: 'Under 60 seconds from upload to normalized preview' },
-  { num: '02', icon: '⚙', label: 'Step two', title: 'Tag parts & configure interactions', body: 'Click any mesh to assign it as a door, bonnet, headlight, or body panel. Set pivot presets. Configure open/close angles — all without code.', time: 'Full car setup in under 10 minutes' },
-  { num: '03', icon: '⬡', label: 'Step three', title: 'Publish an immutable iframe', body: 'Every setting — lighting, reflections, HDRI, camera — is frozen into an immutable snapshot. Embed it anywhere with one line of code.', time: 'Publish in under 10 seconds' },
+  { num: '01', icon: Upload, label: 'Step one', title: 'Upload & normalize your model', body: 'Drop a GLB or GLTF. AutoZ runs the full normalization pipeline — unit conversion, centering, ground alignment, forward direction correction.', time: 'Under 60 seconds from upload to normalized preview' },
+  { num: '02', icon: Settings, label: 'Step two', title: 'Tag parts & configure interactions', body: 'Click any mesh to assign it as a door, bonnet, headlight, or body panel. Set pivot presets. Configure open/close angles — all without code.', time: 'Full car setup in under 10 minutes' },
+  { num: '03', icon: FileCheck, label: 'Step three', title: 'Publish an immutable iframe', body: 'Every setting — lighting, reflections, HDRI, camera — is frozen into an immutable snapshot. Embed it anywhere with one line of code.', time: 'Publish in under 10 seconds' },
 ]
 
 const FEATURES = [
-  { icon: '📐', title: 'Automatic model normalization', body: 'Converts any GLB to a canonical coordinate system — correct scale, centered, grounded, front-facing.', proof: 'Formula-driven: unit → scale → center → direction' },
-  { icon: '🚪', title: 'Hinge-accurate door animations', body: 'Normal, suicide, gullwing, scissor — each uses Rodrigues rotation with exponential damping.', proof: 'λ=8 damping, 65° open, 0° close. Configurable.' },
-  { icon: '💡', title: 'Emissive light toggle system', body: 'Headlights, taillights, DRLs, and indicators all support smooth intensity transitions.', proof: 'Emissive intensity interpolation per frame delta' },
-  { icon: '🎨', title: 'Body color & material variants', body: 'Unlimited color variants with car-paint PBR properties — metalness, roughness, clearcoat.', proof: 'lerp(C_current, C_target, 1 − e^−λΔt)' },
-  { icon: '🌐', title: 'HDRI lighting & studio reflections', body: 'Upload your own HDR environment or choose from presets. Per-material reflection multipliers.', proof: 'envMapIntensity × material multiplier per part' },
-  { icon: '📊', title: 'Adaptive quality & GPU budgets', body: 'AutoZ monitors FPS and adjusts DPR, shadow resolution, and post-processing automatically.', proof: '<15MB GLB · <120 draw calls · <500k triangles' },
-  { icon: '☁', title: 'Hybrid asset storage', body: '3D runtime assets go to Supabase Storage. Image-like assets go to ImgBB. All URLs tracked in Postgres.', proof: 'Runtime-critical → Supabase. Visual-only → ImgBB.' },
-  { icon: '🔘', title: '3D radial button system', body: 'Contextual controls appear radially around clicked parts, facing the camera at all times.', proof: 'B_i = A + r_b(cos(φ_i)R_c + sin(φ_i)U_c)' },
-  { icon: '📎', title: 'Immutable iframe publishing', body: 'Every publish creates a frozen snapshot version. The URL always renders exactly what was published.', proof: 'Draft = editable. Published snapshot = frozen.' },
+  { icon: Ruler, title: 'Automatic model normalization', body: 'Converts any GLB to a canonical coordinate system — correct scale, centered, grounded, front-facing.', proof: 'Formula-driven: unit → scale → center → direction' },
+  { icon: DoorOpen, title: 'Hinge-accurate door animations', body: 'Normal, suicide, gullwing, scissor — each uses Rodrigues rotation with exponential damping.', proof: 'λ=8 damping, 65° open, 0° close. Configurable.' },
+  { icon: Lightbulb, title: 'Emissive light toggle system', body: 'Headlights, taillights, DRLs, and indicators all support smooth intensity transitions.', proof: 'Emissive intensity interpolation per frame delta' },
+  { icon: Palette, title: 'Body color & material variants', body: 'Unlimited color variants with car-paint PBR properties — metalness, roughness, clearcoat.', proof: 'lerp(C_current, C_target, 1 − e^−λΔt)' },
+  { icon: Globe2, title: 'HDRI lighting & studio reflections', body: 'Upload your own HDR environment or choose from presets. Per-material reflection multipliers.', proof: 'envMapIntensity × material multiplier per part' },
+  { icon: ChartNoAxesColumnIncreasing, title: 'Adaptive quality & GPU budgets', body: 'AutoZ monitors FPS and adjusts DPR, shadow resolution, and post-processing automatically.', proof: '<15MB GLB · <120 draw calls · <500k triangles' },
+  { icon: Cloud, title: 'Hybrid asset storage', body: '3D runtime assets go to Supabase Storage. Image-like assets go to ImgBB. All URLs tracked in Postgres.', proof: 'Runtime-critical → Supabase. Visual-only → ImgBB.' },
+  { icon: MousePointerClick, title: '3D radial button system', body: 'Contextual controls appear radially around clicked parts, facing the camera at all times.', proof: 'B_i = A + r_b(cos(φ_i)R_c + sin(φ_i)U_c)' },
+  { icon: Paperclip, title: 'Immutable iframe publishing', body: 'Every publish creates a frozen snapshot version. The URL always renders exactly what was published.', proof: 'Draft = editable. Published snapshot = frozen.' },
 ]
 
 const METRICS = [
@@ -83,10 +101,10 @@ export default function LandingPage() {
           </p>
           <div className='lhero-actions'>
             <Link href='/editor' className='btn-p'>
-              Open Editor <span className='arrow'>→</span>
+              Open Editor <ArrowRight size={16} aria-hidden='true' className='arrow' />
             </Link>
             <Link href='/editor' className='btn-p btn-editor'>
-              Launch Studio <span className='arrow'>⟶</span>
+              Launch Studio <Rocket size={16} aria-hidden='true' className='arrow' />
             </Link>
             <a href='#how' className='btn-g'>See how it works</a>
           </div>
@@ -166,12 +184,15 @@ export default function LandingPage() {
         <div className='steps'>
           {STEPS.map(s => (
             <div key={s.num} className='step'>
+              {(() => {
+                const StepIcon = s.icon
+                return <div className='step-icon'><StepIcon size={26} strokeWidth={1.8} aria-hidden='true' /></div>
+              })()}
               <div className='step-num'>{s.num}</div>
-              <div className='step-icon'>{s.icon}</div>
               <div className='step-label'>{s.label}</div>
               <div className='step-t'>{s.title}</div>
               <div className='step-b'>{s.body}</div>
-              <div className='step-time'>⟳ {s.time}</div>
+              <div className='step-time'><TimerReset size={14} strokeWidth={2} aria-hidden='true' /> {s.time}</div>
             </div>
           ))}
         </div>
@@ -189,7 +210,10 @@ export default function LandingPage() {
         <div className='feat-grid'>
           {FEATURES.map(f => (
             <div key={f.title} className='feat-card'>
-              <span className='feat-icon'>{f.icon}</span>
+              {(() => {
+                const FeatureIcon = f.icon
+                return <span className='feat-icon'><FeatureIcon size={22} strokeWidth={1.9} aria-hidden='true' /></span>
+              })()}
               <div className='feat-t'>{f.title}</div>
               <div className='feat-b'>{f.body}</div>
               <div className='feat-p'>{f.proof}</div>
@@ -225,13 +249,13 @@ export default function LandingPage() {
           Upload your first GLB and publish a live interactive 3D embed in under 10 minutes.
         </p>
         <div className='lcta-actions'>
-          <Link href='/editor' className='btn-p'>Open Editor <span className='arrow'>→</span></Link>
+          <Link href='/editor' className='btn-p'>Open Editor <ArrowRight size={16} aria-hidden='true' className='arrow' /></Link>
           <a href='#how' className='btn-g'>Book a live demo</a>
         </div>
         <div className='lcta-trust'>
           {['Works in any browser', 'No SDK or app install', 'Publish in under 10 minutes'].map(t => (
             <span key={t} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-              <span style={{ color: 'var(--c-gold)', opacity: 0.6 }}>✓</span> {t}
+              <BadgeCheck size={14} strokeWidth={2} aria-hidden='true' style={{ color: 'var(--c-gold)', opacity: 0.7 }} /> {t}
             </span>
           ))}
         </div>
