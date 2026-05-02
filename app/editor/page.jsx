@@ -36,6 +36,11 @@ const DEFAULT_CONFIG = {
   stage: {
     backgroundColor: '#f7f7f4',
     shadows: true,
+    radialFloorEnabled: true,
+    radialFloorColor: '#9aa8bf',
+    radialFloorOpacity: 0.42,
+    radialFloorInner: 0.14,
+    radialFloorOuter: 1.08,
     shadowOpacity: 0.34,
     shadowBlur: 2.8,
     shadowFar: 7.5,
@@ -46,6 +51,7 @@ const DEFAULT_CONFIG = {
     backgroundIntensity: 0.75,
   },
   animation: { autoRotate: false, rotateSpeed: 0.35 },
+  import: {},
   camera: { fov: 40, position: [5, 3, -7] },
   postprocessing: {
     enabled: true,
@@ -267,6 +273,10 @@ async function uploadChunkedModel(file, slug, onProgress) {
 const mergeSceneConfigFromSnapshot = (snapshot = {}) => ({
   ...DEFAULT_CONFIG,
   environment: { ...DEFAULT_CONFIG.environment, ...(snapshot.environment ?? {}) },
+  import: {
+    ...(DEFAULT_CONFIG.import ?? {}),
+    ...(snapshot.import ?? {}),
+  },
   lighting: {
     ...DEFAULT_CONFIG.lighting,
     ...(snapshot.lighting ?? {}),
@@ -475,6 +485,12 @@ export default function EditorPage({ initialPublishId = '' }) {
     try {
       const result = await runImportPipeline(files, options.importOptions ?? {})
       setImportResult(result)
+      if (result?.normResult) {
+        setSceneConfig((prev) => ({
+          ...prev,
+          import: { ...(prev.import ?? {}), ...result.normResult },
+        }))
+      }
       setPartRevision((value) => value + 1)
       setPhase('ready')
       if (options.preserveTransferProgress) {

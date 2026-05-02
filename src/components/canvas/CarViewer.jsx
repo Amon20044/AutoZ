@@ -1,6 +1,6 @@
 'use client'
 
-import { Suspense } from 'react'
+import { Suspense, useMemo } from 'react'
 import { Canvas } from '@react-three/fiber'
 import { AdaptiveDpr, OrbitControls, PerspectiveCamera, Preload } from '@react-three/drei'
 import * as THREE from 'three'
@@ -10,6 +10,7 @@ import CarModel from './CarModel'
 import PartButtons from './PartButtons'
 import PostProcessing, { RendererSettings } from './PostProcessing'
 import { installThreeConsoleFilter } from '@/lib/three/console-filter'
+import { orbitTargetFromImport } from '@/lib/scene/orbit-target'
 
 installThreeConsoleFilter()
 
@@ -37,6 +38,7 @@ export default function CarViewer({
   const post = sceneConfig.postprocessing ?? {}
   const backgroundColor = stage.backgroundColor ?? env.backgroundColor ?? '#f7f7f4'
   const reflectionIntensity = stage.environmentIntensity ?? 1.18
+  const orbitTarget = useMemo(() => orbitTargetFromImport(sceneConfig.import, [0, 0.8, 0]), [sceneConfig.import])
 
   return (
     <div className='az-viewport'>
@@ -70,7 +72,7 @@ export default function CarViewer({
           maxDistance={12}
           enablePan
           panSpeed={0.5}
-          target={[0, 0.8, 0]}
+          target={orbitTarget}
           autoRotate={animation.autoRotate ?? false}
           autoRotateSpeed={animation.rotateSpeed ?? 0.35}
         />

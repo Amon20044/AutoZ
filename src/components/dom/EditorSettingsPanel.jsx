@@ -340,6 +340,29 @@ export default function EditorSettingsPanel({
             min={0.5} max={6} step={0.1}
             onChange={(v) => onChange('stage', { ...stage, shadowBlur: v })}
           />
+          <label className='az-toggle-row'>
+            <span>Radial floor tint</span>
+            <input
+              type='checkbox'
+              checked={stage.radialFloorEnabled !== false}
+              onChange={(e) => onChange('stage', { ...stage, radialFloorEnabled: e.target.checked })}
+            />
+          </label>
+          <div className='az-color-row'>
+            <span>Floor tint</span>
+            <input
+              type='color'
+              value={stage.radialFloorColor ?? '#9aa8bf'}
+              disabled={stage.radialFloorEnabled === false}
+              onChange={(e) => onChange('stage', { ...stage, radialFloorColor: e.target.value })}
+            />
+          </div>
+          <SliderRow
+            label='Floor tint strength'
+            value={stage.radialFloorOpacity ?? 0.42}
+            min={0} max={1} step={0.02}
+            onChange={(v) => onChange('stage', { ...stage, radialFloorOpacity: v })}
+          />
         </div>
       )}
 

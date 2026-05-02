@@ -4,6 +4,7 @@
  */
 import { NextResponse } from 'next/server'
 import prisma from '@/config/prisma'
+import { normalizePublishId } from '@/lib/publish-ids'
 
 /**
  * Rewrite legacy S3-endpoint URLs in a snapshot to the correct Supabase
@@ -31,19 +32,57 @@ function normalizeSnapshotUrls(snapshot) {
   if (!snapshot || typeof snapshot !== 'object') return snapshot
   const fixed = { ...snapshot }
 
-  if (fixed.model?.url) {
-    fixed.model = {
-      ...fixed.model,
-      url: fixLegacyStorageUrl(fixed.model.url),
-      manifestUrl: fixLegacyStorageUrl(fixed.model.manifestUrl),
+  if (fixed.model?.url || fixed.model?.manifest?.chunks?.length || fixed.model?.manifestUrl) {
+    fixed.model = { ...fixed.model }
+    fixed.model.url = fixLegacyStorageUrl(fixed.model.url)
+    fixed.model.manifestUrl = fixLegacyStorageUrl(fixed.model.manifestUrl)
+
+    const { manifest } = fixed.model
+    if (manifest && Array.isArray(manifest.chunks)) {
+      fixed.model.manifest = {
+        ...manifest,
+        chunks: manifest.chunks.map((c) => (typeof c === 'string' ? fixLegacyStorageUrl(c) : c)),
+      }
     }
   }
+
+  const fixLodList = (lods = []) =>
+    lods.map((lod) => (lod && typeof lod === 'object' && typeof lod.url === 'string')
+      ? { ...lod, url: fixLegacyStorageUrl(lod.url) }
+      : lod)
+
+  if (fixed.assetManifest && typeof fixed.assetManifest === 'object') {
+    fixed.assetManifest = {
+      ...fixed.assetManifest,
+      lods: fixLodList(fixed.assetManifest.lods),
+    }
+  }
+  if (fixed.model?.assetManifest && typeof fixed.model.assetManifest === 'object') {
+    fixed.model = {
+      ...fixed.model,
+      assetManifest: {
+        ...fixed.model.assetManifest,
+        lods: fixLodList(fixed.model.assetManifest.lods),
+      },
+    }
+  }
+  if (fixed.assets?.assetManifest && typeof fixed.assets.assetManifest === 'object') {
+    fixed.assets = {
+      ...fixed.assets,
+      assetManifest: {
+        ...fixed.assets.assetManifest,
+        lods: fixLodList(fixed.assets.assetManifest.lods),
+      },
+    }
+  }
+
   if (Array.isArray(fixed.runtimeAssets)) {
     fixed.runtimeAssets = fixed.runtimeAssets.map((a) => ({
       ...a,
       url: fixLegacyStorageUrl(a.url),
     }))
   }
+
   return fixed
 }
 
@@ -53,7 +92,13 @@ export async function GET(request, { params }) {
       return NextResponse.json({ error: 'Database is not configured on this deployment.' }, { status: 500 })
     }
 
-    const { slug } = await params
+    const { slug: slugParam } = await params
+    const raw = typeof slugParam === 'string' ? slugParam.trim() : ''
+    const slug = normalizePublishId(raw) || raw || ''
+
+    if (!slug || slug.length < 2) {
+      return NextResponse.json({ error: 'Invalid slug' }, { status: 400 })
+    }
 
     const publish = await prisma.publish.findUnique({
       where: { publishSlug: slug },

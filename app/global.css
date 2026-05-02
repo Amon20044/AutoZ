@@ -1660,6 +1660,14 @@
   height: 34px;
 }
 
+.frame-loading.frame-loading--error {
+  color: #f87171;
+  max-width: min(420px, 92vw);
+  margin: 0 auto;
+  line-height: 1.45;
+  text-align: center;
+}
+
 .frame-load-progress {
   width: min(360px, 78vw);
   display: grid;

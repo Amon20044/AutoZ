@@ -2,6 +2,8 @@ const CHUNK_CACHE_NAME = 'autoz-chunked-model-v1'
 const CHUNK_CACHE_META_PREFIX = 'autoz:chunk-cache:'
 const CHUNK_CACHE_TTL_MS = 5 * 60 * 1000
 const CHUNK_FETCH_CONCURRENCY = 4
+/** First GLB/glTF bytes must load in ascending part order — header + chunk table live at the front. */
+const SEQUENTIAL_PREFIX_CHUNKS = 3
 
 export function normalizeStorageUrl(url) {
   if (!url || typeof url !== 'string') return url
@@ -121,6 +123,13 @@ function emitProgress(onProgress, phase, payload) {
   })
 }
 
+function sanitizeFetchedManifest({ manifest, manifestUrl }) {
+  const chunks = (manifest?.chunks ?? []).map((part) =>
+    normalizeStorageUrl(resolveChunkUrl(part, manifestUrl)),
+  )
+  return { ...manifest, chunks }
+}
+
 export async function fetchChunkedModelManifest(model, options = {}) {
   const manifestUrl = normalizeStorageUrl(model?.manifestUrl || model?.url)
   if (!manifestUrl) throw new Error('Chunked model is missing a manifest URL.')
@@ -137,17 +146,19 @@ export async function fetchChunkedModelManifest(model, options = {}) {
   })
 
   if (model?.manifest?.chunks?.length) {
-    return { manifest: model.manifest, manifestUrl }
+    const manifest = sanitizeFetchedManifest({ manifest: model.manifest, manifestUrl })
+    return { manifest, manifestUrl }
   }
 
   const res = await fetch(manifestUrl, { cache: 'no-store' })
   if (!res.ok) throw new Error(`Could not load model manifest (${res.status}).`)
 
-  const manifest = await res.json()
-  if (!Array.isArray(manifest.chunks) || manifest.chunks.length === 0) {
+  const raw = await res.json()
+  if (!Array.isArray(raw.chunks) || raw.chunks.length === 0) {
     throw new Error('Model manifest does not contain any chunks.')
   }
 
+  const manifest = sanitizeFetchedManifest({ manifest: raw, manifestUrl })
   return { manifest, manifestUrl }
 }
 
@@ -210,27 +221,37 @@ async function fetchChunk(url, contentType) {
 }
 
 export async function fetchChunkedModelBlob(model, options = {}) {
-  const { manifest, manifestUrl } = await fetchChunkedModelManifest(model, options)
+  const { manifest } = await fetchChunkedModelManifest(model, options)
   const contentType = manifest.contentType || model?.contentType || 'model/gltf-binary'
   const fileName = model?.fileName || manifest.fileName || 'model.glb'
   const totalBytes = manifest.size || model?.fileSize || 0
-  const progressParts = buildProgressParts(manifest)
+
+  /** Basenames for ui progress only — byte estimate still uses manifest.chunkSize/size */
+  const namesForParts = manifest.chunks.map((raw) => {
+    if (typeof raw !== 'string') return String(raw)
+    try {
+      return new URL(raw).pathname.split('/').pop() || raw
+    } catch {
+      return raw.split('/').pop() || raw
+    }
+  })
+
+  const progressParts = buildProgressParts({ ...manifest, chunks: namesForParts })
+
   const blobs = new Array(manifest.chunks.length)
   let nextIndex = 0
   let completedParts = 0
   let completedBytes = 0
   let cachedParts = 0
 
-  const report = (phase, currentPart, statusText) => {
-    const percent = totalBytes > 0
-      ? Math.round((completedBytes / totalBytes) * 100)
-      : Math.round((completedParts / manifest.chunks.length) * 100)
-
+  const emitReport = (phase, currentPart, statusText) => {
     emitProgress(options.onProgress, phase, {
       fileName,
       totalBytes,
       uploadedBytes: completedBytes,
-      percent,
+      percent: totalBytes > 0
+        ? Math.round((completedBytes / totalBytes) * 100)
+        : Math.round((completedParts / manifest.chunks.length) * 100),
       totalParts: manifest.chunks.length,
       completedParts,
       currentPart,
@@ -240,7 +261,32 @@ export async function fetchChunkedModelBlob(model, options = {}) {
     })
   }
 
-  report('fetching', null, 'Preparing model chunks')
+  emitReport('fetching', null, 'Preparing model chunks')
+
+  const prefixEnd = Math.min(SEQUENTIAL_PREFIX_CHUNKS, manifest.chunks.length)
+  for (let index = 0; index < prefixEnd; index += 1) {
+    const part = progressParts[index]
+    const chunkUrl = manifest.chunks[index]
+
+    part.status = 'running'
+    emitReport('fetching', index, `Loading part ${index + 1} of ${manifest.chunks.length} (priority)`)
+
+    const result = await fetchChunk(chunkUrl, contentType)
+    blobs[index] = result.blob
+    part.status = 'done'
+    part.cached = result.cached
+    part.uploaded = result.blob.size || part.size
+    part.size = result.blob.size || part.size
+    part.percent = 100
+    completedParts += 1
+    completedBytes += part.uploaded
+    if (result.cached) cachedParts += 1
+    emitReport('fetching', index, result.cached
+      ? `Loaded cached part ${index + 1}`
+      : `Fetched part ${index + 1} of ${manifest.chunks.length}`)
+  }
+
+  nextIndex = prefixEnd
 
   const worker = async () => {
     while (nextIndex < manifest.chunks.length) {
@@ -248,10 +294,10 @@ export async function fetchChunkedModelBlob(model, options = {}) {
       nextIndex += 1
 
       const part = progressParts[index]
-      const chunkUrl = normalizeStorageUrl(resolveChunkUrl(manifest.chunks[index], manifestUrl))
+      const chunkUrl = manifest.chunks[index]
 
       part.status = 'running'
-      report('fetching', index, `Fetching part ${index + 1} of ${manifest.chunks.length}`)
+      emitReport('fetching', index, `Fetching part ${index + 1} of ${manifest.chunks.length}`)
 
       try {
         const result = await fetchChunk(chunkUrl, contentType)
@@ -264,22 +310,25 @@ export async function fetchChunkedModelBlob(model, options = {}) {
         completedParts += 1
         completedBytes += part.uploaded
         if (result.cached) cachedParts += 1
-        report('fetching', index, result.cached
+        emitReport('fetching', index, result.cached
           ? `Loaded cached part ${index + 1} of ${manifest.chunks.length}`
           : `Fetched part ${index + 1} of ${manifest.chunks.length}`)
       } catch (err) {
         part.status = 'error'
-        report('error', index, err.message)
+        emitReport('error', index, err.message)
         throw err
       }
     }
   }
 
-  await Promise.all(
-    Array.from({ length: Math.min(CHUNK_FETCH_CONCURRENCY, manifest.chunks.length) }, () => worker()),
-  )
+  const remaining = manifest.chunks.length - prefixEnd
+  if (remaining > 0) {
+    await Promise.all(
+      Array.from({ length: Math.min(CHUNK_FETCH_CONCURRENCY, remaining) }, () => worker()),
+    )
+  }
 
-  report('assembling', null, 'Combining model chunks')
+  emitReport('assembling', null, 'Combining model chunks')
 
   const blob = new Blob(blobs, { type: contentType })
   emitProgress(options.onProgress, 'done', {

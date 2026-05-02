@@ -34,37 +34,68 @@ export function useAutoZEngine(snapshot, gltf, options = {}) {
   const [report, setReport] = useState(null)
   const [error, setError] = useState(null)
 
+  const [engine, setEngine] = useState(null)
+
   // Initialize engine on snapshot + gltf ready
   useEffect(() => {
-    if (!snapshot || !gltf?.scene) return
+    if (!snapshot || !gltf?.scene) {
+      engineRef.current = null
+      setEngine(null)
+      setIsLoaded(false)
+      setRegistry(null)
+      setReport(null)
+      setError(null)
+      return undefined
+    }
 
-    // Create fresh engine
-    const engine = new AutoZEngine()
-    engineRef.current = engine
+    let cancelled = false
+    const nextEngine = new AutoZEngine()
+
+    engineRef.current = nextEngine
+    setEngine(nextEngine)
 
     ;(async () => {
       try {
-        const buildReport = await engine.initialize(
+        const buildReport = await nextEngine.initialize(
           snapshot,
           gltf.scene.clone(), // clone to avoid mutation on re-init
           scene,
           camera,
         )
-        setRegistry(engine.registry)
+
+        if (cancelled) {
+          nextEngine.dispose()
+          engineRef.current = null
+          setEngine(null)
+          return
+        }
+
+        setRegistry(nextEngine.registry)
         setReport(buildReport)
         setIsLoaded(true)
+        setError(null)
         if (options.verbose) console.log('[useAutoZEngine] Loaded.', buildReport)
       } catch (err) {
+        if (!cancelled) console.error('[useAutoZEngine] Init failed:', err)
         setError(err)
-        console.error('[useAutoZEngine] Init failed:', err)
+        setIsLoaded(false)
+        nextEngine.dispose()
+        engineRef.current = null
+        setEngine(null)
+        setRegistry(null)
+        setReport(null)
       }
     })()
 
     return () => {
-      engine.dispose()
+      cancelled = true
+      nextEngine.dispose()
+      if (engineRef.current === nextEngine) engineRef.current = null
+      setEngine(null)
       setIsLoaded(false)
       setRegistry(null)
       setReport(null)
+      setError(null)
     }
   }, [snapshot, gltf]) // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -79,7 +110,7 @@ export function useAutoZEngine(snapshot, gltf, options = {}) {
   }, [])
 
   return {
-    engine: engineRef.current,
+    engine,
     registry,
     report,
     isLoaded,

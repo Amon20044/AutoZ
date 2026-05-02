@@ -262,6 +262,11 @@ export async function POST(request) {
       stage: config.stage || {
         backgroundColor: '#f7f7f4',
         shadows: true,
+        radialFloorEnabled: true,
+        radialFloorColor: '#9aa8bf',
+        radialFloorOpacity: 0.42,
+        radialFloorInner: 0.14,
+        radialFloorOuter: 1.08,
         shadowOpacity: 0.34,
         shadowBlur: 2.8,
         shadowFar: 7.5,

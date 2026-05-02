@@ -1,6 +1,6 @@
 'use client'
 
-import { Suspense, useCallback, useEffect, useState } from 'react'
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Canvas, useThree } from '@react-three/fiber'
 import {
   OrbitControls, PerspectiveCamera, AdaptiveDpr, useGLTF,
@@ -11,7 +11,12 @@ import PostProcessing, { RendererSettings } from './PostProcessing'
 import PartButtons from './PartButtons'
 import StudioStage from './StudioStage'
 import { useAutoZEngine } from '@/engine/hooks/useAutoZEngine'
-import { createModelObjectUrl, normalizeStorageUrl } from '@/lib/model/chunked-model'
+import {
+  createModelObjectUrl,
+  isChunkedModel,
+  normalizeStorageUrl,
+} from '@/lib/model/chunked-model'
+import { orbitTargetFromImport } from '@/lib/scene/orbit-target'
 import { installThreeConsoleFilter } from '@/lib/three/console-filter'
 import { useDeviceProfile } from '@/hooks/useDeviceProfile'
 
@@ -28,16 +33,25 @@ export default function FrameCanvas({ snapshot }) {
   const environment = snapshot.environment ?? { preset: 'studio', background: false, backgroundColor: '#f7f7f4' }
   const stage = getStageConfig(snapshot)
   const backgroundColor = stage.backgroundColor ?? environment.backgroundColor ?? '#f7f7f4'
+  const orbitTarget = useMemo(
+    () => orbitTargetFromImport(snapshot.import, [0, 0.8, 0]),
+    [snapshot.import],
+  )
   const [runtime, setRuntime] = useState({ engine: null, registry: null })
   const [lightsOn, setLightsOn] = useState(false)
   const [wheelsOn, setWheelsOn] = useState(false)
   const [wheelSpeed, setWheelSpeed] = useState(5.5)
   const [modelLoadProgress, setModelLoadProgress] = useState(null)
+  const [modelLoadError, setModelLoadError] = useState(null)
   const [modelReady, setModelReady] = useState(false)
   const [showPartLabels, setShowPartLabels] = useState(false)
 
   const lightCount = runtime.registry?.headLights.length || runtime.registry?.lights.length || 0
   const wheelCount = runtime.registry?.wheelSpinParts.length ?? 0
+
+  useEffect(() => {
+    setModelLoadError(null)
+  }, [snapshot?.slug])
 
   const handleRuntimeReady = useCallback((nextRuntime) => {
     setRuntime(nextRuntime)
@@ -94,7 +108,7 @@ export default function FrameCanvas({ snapshot }) {
           maxDistance={12}
           enablePan
           panSpeed={0.5}
-          target={[0, 0.8, 0]}
+          target={orbitTarget}
         />
 
         <AdaptiveDpr />
@@ -106,6 +120,7 @@ export default function FrameCanvas({ snapshot }) {
               snapshot={snapshot}
               onReady={handleRuntimeReady}
               onProgress={setModelLoadProgress}
+              onError={setModelLoadError}
               showPartLabels={showPartLabels}
             />
           )}
@@ -114,7 +129,13 @@ export default function FrameCanvas({ snapshot }) {
         {post.enabled !== false && <PostProcessing config={post} />}
       </Canvas>
 
-      {!modelReady && snapshot.model?.url && (
+      {modelLoadError && snapshot.model?.url && (
+        <div className='frame-loading frame-loading--error' role='alert'>
+          <div>{modelLoadError}</div>
+        </div>
+      )}
+
+      {!modelReady && snapshot.model?.url && !modelLoadError && (
         <div className='frame-loading'>
           <div className='az-spinner' />
           <div>{modelLoadProgress?.statusText || 'Loading model'}</div>
@@ -192,17 +213,23 @@ export default function FrameCanvas({ snapshot }) {
 }
 
 function getStageConfig(snapshot) {
+  const s = snapshot.stage ?? {}
   return {
-    backgroundColor: snapshot.stage?.backgroundColor ?? snapshot.environment?.backgroundColor ?? '#f7f7f4',
-    shadows: snapshot.stage?.shadows ?? snapshot.platform?.enabled ?? true,
-    shadowOpacity: snapshot.stage?.shadowOpacity ?? 0.34,
-    shadowBlur: snapshot.stage?.shadowBlur ?? 2.8,
-    shadowFar: snapshot.stage?.shadowFar ?? 7.5,
-    shadowScale: snapshot.stage?.shadowScale ?? 11,
-    shadowResolution: snapshot.stage?.shadowResolution ?? 1024,
-    shadowColor: snapshot.stage?.shadowColor ?? '#475569',
-    environmentIntensity: snapshot.stage?.environmentIntensity ?? 1.18,
-    backgroundIntensity: snapshot.stage?.backgroundIntensity ?? 0.75,
+    backgroundColor: s.backgroundColor ?? snapshot.environment?.backgroundColor ?? '#f7f7f4',
+    shadows: s.shadows ?? snapshot.platform?.enabled ?? true,
+    radialFloorEnabled: s.radialFloorEnabled !== undefined ? s.radialFloorEnabled : true,
+    radialFloorColor: s.radialFloorColor ?? '#9aa8bf',
+    radialFloorOpacity: s.radialFloorOpacity ?? 0.42,
+    radialFloorInner: s.radialFloorInner ?? 0.14,
+    radialFloorOuter: s.radialFloorOuter ?? 1.08,
+    shadowOpacity: s.shadowOpacity ?? 0.34,
+    shadowBlur: s.shadowBlur ?? 2.8,
+    shadowFar: s.shadowFar ?? 7.5,
+    shadowScale: s.shadowScale ?? 11,
+    shadowResolution: s.shadowResolution ?? 1024,
+    shadowColor: s.shadowColor ?? '#475569',
+    environmentIntensity: s.environmentIntensity ?? 1.18,
+    backgroundIntensity: s.backgroundIntensity ?? 0.75,
   }
 }
 
@@ -213,87 +240,176 @@ function getFrameAssetManifest(snapshot) {
     ?? null
 }
 
-function selectFrameLod(manifest, deviceProfile) {
-  const lods = manifest?.lods ?? []
-  if (lods.length === 0) return null
-
-  const configured = manifest?.deviceProfiles?.[deviceProfile.deviceClass]?.firstLod
-  const deviceLods = lods
-    .filter((lod) => lod.device?.includes(deviceProfile.deviceClass))
-    .sort((a, b) => (a.priority || 0) - (b.priority || 0))
-
-  return lods.find((lod) => lod.id === configured)
-    || lods.find((lod) => lod.id === deviceProfile.preferredLod)
-    || deviceLods[0]
-    || lods[0]
+function isStandaloneGltfUrl(raw) {
+  if (!raw || typeof raw !== 'string') return false
+  const u = raw.toLowerCase()
+  if (u.includes('manifest.json')) return false
+  if (/\.part-\d{3,}/.test(u)) return false
+  return u.endsWith('.glb') || u.endsWith('.gltf') || /\.glb[?#]/.test(u) || /\.gltf[?#]/.test(u)
 }
 
-function FrameRuntimeLoader({ snapshot, onReady, onProgress, showPartLabels }) {
+/**
+ * Lowest-footprint LOD for the client's device tier — used while a chunked GLB downloads.
+ */
+function pickProgressivePreviewLod(assetManifest, deviceProfile) {
+  const lods = [...(assetManifest?.lods ?? [])]
+    .filter((lod) => lod?.url && isStandaloneGltfUrl(lod.url))
+
+  if (lods.length === 0) return null
+
+  const deviceMatch = (lod) =>
+    !Array.isArray(lod.device)
+    || lod.device.length === 0
+    || lod.device.includes(deviceProfile.deviceClass)
+
+  const prioritized = lods.filter(deviceMatch)
+  const pool = prioritized.length ? prioritized : lods
+
+  pool.sort((a, b) => {
+    const pa = Number.isFinite(a.priority) ? a.priority : 99
+    const pb = Number.isFinite(b.priority) ? b.priority : 99
+    if (pa !== pb) return pa - pb
+    return (Number(a.bytes) || 1e18) - (Number(b.bytes) || 1e18)
+  })
+
+  return pool[0]
+}
+
+function FrameRuntimeLoader({
+  snapshot, onReady, onProgress, onError, showPartLabels,
+}) {
   const gl = useThree((state) => state.gl)
   const deviceProfile = useDeviceProfile(gl)
   const [modelUrl, setModelUrl] = useState(null)
-  const [modelError, setModelError] = useState(null)
-  const assetManifest = getFrameAssetManifest(snapshot)
-  const selectedLod = selectFrameLod(assetManifest, deviceProfile)
+  const previewUrlRef = useRef(null)
 
   useEffect(() => {
     let active = true
-    let revoke = () => {}
+    let revokeBlob = () => {}
 
     setModelUrl(null)
-    setModelError(null)
+    previewUrlRef.current = null
+    onError?.(null)
     onReady({ engine: null, registry: null })
 
-    if (selectedLod?.url) {
-      setModelUrl(normalizeStorageUrl(selectedLod.url))
-      onProgress?.({
-        phase: 'done',
-        fileName: selectedLod.id,
-        percent: 100,
-        totalParts: 1,
-        completedParts: 1,
-        cachedParts: 0,
-        statusText: `Using ${selectedLod.id} LOD`,
-      })
-      return () => {
-        active = false
+    const modelPayload = snapshot.model
+
+    const clearPreviewCache = () => {
+      const u = previewUrlRef.current
+      if (!u) return
+      previewUrlRef.current = null
+      try {
+        useGLTF.clear(u)
+      } catch {
+        // Older drei builds / cache miss — harmless
       }
     }
 
-    createModelObjectUrl(snapshot.model, { onProgress })
-      .then((result) => {
-        revoke = result.revoke
-        if (active) {
-          setModelUrl(result.url)
-        } else {
-          revoke()
-        }
+    if (!modelPayload?.url) return undefined
+
+    const chunked = isChunkedModel(modelPayload)
+    const assetManifest = getFrameAssetManifest(snapshot)
+    const previewLod = chunked ? pickProgressivePreviewLod(assetManifest, deviceProfile) : null
+
+    const finalizeFromBlob = async () => {
+      const result = await createModelObjectUrl(modelPayload, { onProgress })
+      revokeBlob = result.revoke
+
+      if (!active) {
+        revokeBlob()
+        return
+      }
+
+      clearPreviewCache()
+      setModelUrl(result.url)
+    }
+
+    if (!chunked) {
+      const directUrl = normalizeStorageUrl(manifest.url)
+      if (!directUrl) {
+        onError?.('Model URL is missing.')
+      } else {
+        setModelUrl(directUrl)
+      }
+      return () => {
+        active = false
+        revokeBlob()
+      }
+    }
+
+    if (previewLod?.url) {
+      const preview = normalizeStorageUrl(previewLod.url)
+      previewUrlRef.current = preview
+      setModelUrl(preview)
+      onProgress?.({
+        phase: 'fetching',
+        fileName: previewLod.id || 'preview-lod',
+        percent: 0,
+        totalParts: 1,
+        completedParts: 0,
+        cachedParts: 0,
+        statusText: previewLod.fileName?.includes('.')
+          ? `Loading preview • ${previewLod.fileName}`
+          : 'Loading low-detail preview • streaming HD in background',
+        parts: [],
       })
-      .catch((err) => {
-        if (active) setModelError(err)
-      })
+    }
+
+    finalizeFromBlob().catch((err) => {
+      if (!active) return
+      if (!previewLod?.url) {
+        const msg = typeof err?.message === 'string' ? err.message : String(err ?? 'Could not assemble model.')
+        onError?.(msg)
+      } else if (previewUrlRef.current) {
+        onProgress?.({
+          phase: 'done',
+          fileName: modelPayload.fileName || 'model.glb',
+          percent: 100,
+          totalParts: 1,
+          completedParts: 1,
+          statusText: 'Preview ready (full-resolution stream failed)',
+        })
+      }
+    })
 
     return () => {
       active = false
-      revoke()
+      revokeBlob()
+      clearPreviewCache()
     }
-  }, [onReady, onProgress, selectedLod, snapshot.model])
+  }, [
+    snapshot,
+    deviceProfile,
+    onError,
+    onProgress,
+    onReady,
+  ])
 
-  if (modelError || !modelUrl) return null
+  if (!modelUrl) return null
 
   return (
     <FrameRuntime
+      key={modelUrl}
       snapshot={snapshot}
       modelUrl={modelUrl}
       onReady={onReady}
+      onError={onError}
       showPartLabels={showPartLabels}
     />
   )
 }
 
-function FrameRuntime({ snapshot, modelUrl, onReady, showPartLabels }) {
+function FrameRuntime({ snapshot, modelUrl, onReady, showPartLabels, onError }) {
   const gltf = useGLTF(modelUrl)
-  const { engine, registry } = useAutoZEngine(snapshot, gltf)
+  const { engine, registry, error, isLoaded } = useAutoZEngine(snapshot, gltf)
+
+  useEffect(() => {
+    if (error) {
+      onError?.(error.message ?? String(error))
+    } else if (isLoaded) {
+      onError?.(null)
+    }
+  }, [error, isLoaded, onError])
 
   useEffect(() => {
     onReady({ engine, registry })

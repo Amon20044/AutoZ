@@ -5,6 +5,8 @@ import { ContactShadows, Environment } from '@react-three/drei'
 import { useThree } from '@react-three/fiber'
 import * as THREE from 'three'
 
+import RadialFloor from './RadialFloor'
+
 function clampPositive(value, fallback) {
   return Number.isFinite(value) && value > 0 ? value : fallback
 }
@@ -54,6 +56,11 @@ export default function StudioStage({ environment = {}, stage = {}, fog = {} }) 
 
   const backgroundColor = stage.backgroundColor ?? environment.backgroundColor ?? '#f7f7f4'
   const showShadows = stage.shadows !== false
+  const radialEnabled = stage.radialFloorEnabled !== false
+  const radialColor = stage.radialFloorColor ?? '#a8b2c8'
+  const radialOpacity = Number.isFinite(stage.radialFloorOpacity) ? stage.radialFloorOpacity : 0.48
+  const radialInner = Number.isFinite(stage.radialFloorInner) ? stage.radialFloorInner : 0.18
+  const radialOuter = Number.isFinite(stage.radialFloorOuter) ? stage.radialFloorOuter : 1.15
 
   return (
     <>
@@ -65,17 +72,17 @@ export default function StudioStage({ environment = {}, stage = {}, fog = {} }) 
       />
       <SceneAtmosphere environment={environment} stage={{ ...stage, backgroundColor }} fog={fog} />
 
+      {radialEnabled && (
+        <RadialFloor
+          color={radialColor}
+          opacity={radialOpacity}
+          inner={radialInner}
+          outer={radialOuter}
+        />
+      )}
+
       {showShadows && (
         <>
-          <mesh position={[0, -0.012, 0]} rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
-            <planeGeometry args={[80, 80]} />
-            <shadowMaterial
-              color={shadowOptions.color}
-              opacity={Math.min(0.42, shadowOptions.opacity)}
-              transparent
-              depthWrite={false}
-            />
-          </mesh>
           <ContactShadows
             position={[0, 0.002, 0]}
             opacity={shadowOptions.opacity}
