@@ -243,6 +243,7 @@ export async function POST(request) {
       parts: config.parts || [],
       // ── Materials config ──
       materials: config.materials || [],
+      assetManifest: config.assetManifest || config.model?.assetManifest || null,
       // ── Lighting config (complete) ──
       lighting: config.lighting || {
         intensity: 1,
@@ -254,30 +255,38 @@ export async function POST(request) {
         ],
       },
       // ── Environment config ──
-      environment: config.environment || { preset: 'studio', background: false },
+      environment: config.environment || { preset: 'studio', background: false, backgroundColor: '#f7f7f4' },
       // ── Camera config ──
       camera: config.camera || { fov: 40, autoFit: true, position: [5, 3, -7] },
       // ── Platform / turntable config ──
-      platform: config.platform || {
-        enabled: true,
-        radius: 3,
-        color: '#e0e0e0',
-        metalness: 0.92,
-        roughness: 0.04,
-        autoRotate: true,
-        rotateSpeed: 0.12,
+      stage: config.stage || {
+        backgroundColor: '#f7f7f4',
+        shadows: true,
+        shadowOpacity: 0.34,
+        shadowBlur: 2.8,
+        shadowFar: 7.5,
+        shadowScale: 11,
+        shadowResolution: 1024,
+        shadowColor: '#475569',
+        environmentIntensity: 1.18,
+        backgroundIntensity: 0.75,
       },
+      animation: config.animation || { autoRotate: false, rotateSpeed: 0.35 },
       // ── Fog config ──
-      fog: config.fog || { enabled: false, color: '#0a0a0f', near: 10, far: 50 },
+      fog: config.fog || { enabled: false, color: '#f7f7f4', near: 8, far: 34 },
       // ── Post-processing config ──
       postprocessing: config.postprocessing || {
         enabled: true,
-        glare: 0.18,
-        grain: 0.04,
-        vignette: 0.2,
-        exposure: 1.1,
-        contrast: 1,
-        saturation: 1,
+        glare: 0.35,
+        grain: 0.06,
+        vignette: 0.16,
+        exposure: 1.08,
+        contrast: 1.08,
+        saturation: 1.04,
+        bloomThreshold: 0.62,
+        bloomIntensity: 0.32,
+        sharpness: 0.1,
+        chromaticAberration: 0.0007,
       },
       // ── Performance preset ──
       performance: config.performance || { preset: 'high' },

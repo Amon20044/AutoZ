@@ -15,6 +15,18 @@ function toVector3(value) {
     : null
 }
 
+function getTargetCenter(primaryTarget, meshObjects) {
+  if (primaryTarget?.center) return primaryTarget.center.clone()
+
+  if (meshObjects.length > 0) {
+    const box = new THREE.Box3()
+    for (const mesh of meshObjects) box.expandByObject(mesh)
+    return box.getCenter(new THREE.Vector3())
+  }
+
+  return null
+}
+
 function uniqueByUuid(items) {
   const map = new Map()
   for (const item of items) {
@@ -137,6 +149,14 @@ function resolvePivot(config, def, primaryTarget, meshObjects, interaction) {
   const configured = toVector3(config.pivot)
   if (configured) return { pivot: configured, pivotSource: 'config' }
 
+  const pivotOffset = toVector3(config.pivotOffset)
+  if (pivotOffset) {
+    const base = toVector3(config.origin)
+      ?? primaryTarget?.origin?.clone?.()
+      ?? getTargetCenter(primaryTarget, meshObjects)
+    if (base) return { pivot: base.add(pivotOffset), pivotSource: 'offset' }
+  }
+
   const origin = toVector3(config.origin) ?? primaryTarget?.origin?.clone?.() ?? null
   const preferOrigin = config.pivotSource === 'origin' || isOriginDefaultInteraction(interaction)
   if (preferOrigin && origin && (!primaryTarget || isUsableOrigin(origin, primaryTarget))) {
@@ -198,6 +218,8 @@ export function createPartEntry(config, meshIndex, detection = {}, targetIndex =
     ?? primaryTarget?.origin?.clone?.()
     ?? pivot?.clone?.()
     ?? null
+  const pivotOffset = toVector3(config.pivotOffset)
+    ?? (pivot && origin ? new THREE.Vector3().subVectors(pivot, origin) : new THREE.Vector3())
 
   const openAngle = config.openAngle ?? def?.defaultOpenAngle ?? 0
   const closeAngle = config.closeAngle ?? 0
@@ -218,6 +240,7 @@ export function createPartEntry(config, meshIndex, detection = {}, targetIndex =
 
     origin,
     pivot,
+    pivotOffset,
     pivotSource: config.pivotSource || pivotSource,
     axis,
     spinAxis,
@@ -281,6 +304,7 @@ export class PartRegistry {
   get all() { return [...this._parts.values()] }
   get interactive() { return this.all.filter((p) => p.visibleInUI) }
   get lights() { return this.getByCategory('light') }
+  get headLights() { return this.lights.filter((p) => p.typeKey?.includes('light.head')) }
   get wheelSpinParts() { return this.getByCategories(['wheel', 'rim']) }
   get frameInteractive() {
     return this.interactive.filter((p) => !['light', 'wheel', 'rim'].includes(p.category))
@@ -302,6 +326,7 @@ export class PartRegistry {
       meshNames: p.meshNames,
       origin: p.origin?.toArray() ?? null,
       pivot: p.pivot?.toArray() ?? null,
+      pivotOffset: p.pivotOffset?.toArray() ?? null,
       pivotSource: p.pivotSource,
       axis: p.axis?.toArray() ?? null,
       spinAxis: p.spinAxis?.toArray() ?? null,
@@ -331,6 +356,7 @@ export class PartRegistry {
  * @property {THREE.Object3D[]} controlObjects
  * @property {THREE.Vector3|null} origin
  * @property {THREE.Vector3|null} pivot
+ * @property {THREE.Vector3|null} pivotOffset
  * @property {string|null} pivotSource
  * @property {THREE.Vector3|null} axis
  * @property {THREE.Vector3|null} spinAxis

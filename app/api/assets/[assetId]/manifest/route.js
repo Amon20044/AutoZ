@@ -10,7 +10,7 @@ export async function GET(_request, { params }) {
       return NextResponse.json({ error: 'Database is not configured.' }, { status: 500 })
     }
 
-    const assetId = params.assetId
+    const { assetId } = await params
     const project = await prisma.project.findUnique({
       where: { id: assetId },
       select: {

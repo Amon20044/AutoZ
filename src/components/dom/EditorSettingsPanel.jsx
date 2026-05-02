@@ -36,14 +36,14 @@ const HDRI_PRESETS = [
   { id: 'lobby', label: 'Lobby', icon: Hotel, desc: 'Hotel lobby' },
 ]
 
-/** Platform color presets */
-const PLATFORM_COLORS = [
-  { id: 'silver', color: '#e0e0e0', label: 'Silver' },
-  { id: 'dark', color: '#1a1a2e', label: 'Dark' },
-  { id: 'white', color: '#f5f5f5', label: 'White' },
-  { id: 'charcoal', color: '#2d2d3f', label: 'Charcoal' },
-  { id: 'gold', color: '#c9a96e', label: 'Gold' },
-  { id: 'rose', color: '#b76e79', label: 'Rose' },
+/** Studio background presets */
+const STAGE_COLORS = [
+  { id: 'warm-white', color: '#f7f7f4', label: 'Warm White' },
+  { id: 'white', color: '#ffffff', label: 'White' },
+  { id: 'gallery', color: '#ececea', label: 'Gallery' },
+  { id: 'mist', color: '#d8dde2', label: 'Mist' },
+  { id: 'graphite', color: '#34373a', label: 'Graphite' },
+  { id: 'charcoal', color: '#181a1d', label: 'Charcoal' },
 ]
 
 /**
@@ -66,11 +66,12 @@ export default function EditorSettingsPanel({
 
   const toggle = (s) => setExpandedSection((prev) => prev === s ? null : s)
 
-  const env = config.environment ?? { preset: 'studio', background: false }
+  const env = config.environment ?? { preset: 'studio', background: false, backgroundColor: '#f7f7f4' }
   const lighting = config.lighting ?? { ambient: { enabled: true, intensity: 0.35 }, lights: [] }
-  const fog = config.fog ?? { enabled: false, color: '#0a0a0f', near: 10, far: 50 }
-  const platform = config.platform ?? { enabled: true, color: '#e0e0e0', autoRotate: true, rotateSpeed: 0.12 }
-  const post = config.postprocessing ?? { enabled: true, glare: 0.18, grain: 0.04, vignette: 0.2, exposure: 1.1, contrast: 1, saturation: 1 }
+  const fog = config.fog ?? { enabled: false, color: '#f7f7f4', near: 8, far: 34 }
+  const stage = config.stage ?? { backgroundColor: '#f7f7f4', shadows: true, shadowOpacity: 0.34, shadowBlur: 2.8, environmentIntensity: 1.18 }
+  const animation = config.animation ?? { autoRotate: false, rotateSpeed: 0.35 }
+  const post = config.postprocessing ?? { enabled: true, glare: 0.35, grain: 0.06, vignette: 0.16, exposure: 1.08, contrast: 1.08, saturation: 1.04, bloomIntensity: 0.32, sharpness: 0.1 }
   const showPublishProgress = isPublishing || publishProgress.some((step) => step.status !== 'pending')
 
   return (
@@ -261,49 +262,84 @@ export default function EditorSettingsPanel({
 
       {/* ─── Platform ─────────────────────────────────────────────────── */}
       <SectionHeader
-        title='Platform'
+        title='Stage'
         icon={Circle}
-        expanded={expandedSection === 'platform'}
-        onClick={() => toggle('platform')}
+        expanded={expandedSection === 'stage'}
+        onClick={() => toggle('stage')}
       />
-      {expandedSection === 'platform' && (
+      {expandedSection === 'stage' && (
         <div className='az-settings-body'>
           <label className='az-toggle-row'>
-            <span>Show Platform</span>
+            <span>Studio Shadows</span>
             <input
               type='checkbox'
-              checked={platform.enabled ?? true}
-              onChange={(e) => onChange('platform', { ...platform, enabled: e.target.checked })}
+              checked={stage.shadows ?? true}
+              onChange={(e) => onChange('stage', { ...stage, shadows: e.target.checked })}
             />
           </label>
           <label className='az-toggle-row'>
             <span>Auto-Rotate</span>
             <input
               type='checkbox'
-              checked={platform.autoRotate ?? true}
-              onChange={(e) => onChange('platform', { ...platform, autoRotate: e.target.checked })}
+              checked={animation.autoRotate ?? false}
+              onChange={(e) => onChange('animation', { ...animation, autoRotate: e.target.checked })}
             />
           </label>
           <SliderRow
             label='Rotate Speed'
-            value={platform.rotateSpeed ?? 0.12}
-            min={0} max={1} step={0.02}
-            onChange={(v) => onChange('platform', { ...platform, rotateSpeed: v })}
+            value={animation.rotateSpeed ?? 0.35}
+            min={0} max={2} step={0.05}
+            onChange={(v) => onChange('animation', { ...animation, rotateSpeed: v })}
           />
+          <div className='az-color-row'>
+            <span>Background</span>
+            <input
+              type='color'
+              value={stage.backgroundColor ?? '#f7f7f4'}
+              onChange={(e) => {
+                const backgroundColor = e.target.value
+                onChange('stage', { ...stage, backgroundColor })
+                onChange('environment', { ...env, backgroundColor })
+                if (fog.enabled) onChange('fog', { ...fog, color: backgroundColor })
+              }}
+            />
+          </div>
           <div style={{ marginTop: 8 }}>
-            <div style={{ fontSize: 11, color: 'var(--az-text-dim)', marginBottom: 6 }}>Platform Color</div>
+            <div style={{ fontSize: 11, color: 'var(--az-text-dim)', marginBottom: 6 }}>Background Presets</div>
             <div className='az-color-swatch-row'>
-              {PLATFORM_COLORS.map((c) => (
+              {STAGE_COLORS.map((c) => (
                 <button
                   key={c.id}
-                  className={`az-color-swatch ${platform.color === c.color ? 'az-color-swatch--active' : ''}`}
+                  className={`az-color-swatch ${stage.backgroundColor === c.color ? 'az-color-swatch--active' : ''}`}
                   style={{ background: c.color }}
-                  onClick={() => onChange('platform', { ...platform, color: c.color })}
+                  onClick={() => {
+                    onChange('stage', { ...stage, backgroundColor: c.color })
+                    onChange('environment', { ...env, backgroundColor: c.color })
+                    if (fog.enabled) onChange('fog', { ...fog, color: c.color })
+                  }}
                   title={c.label}
                 />
               ))}
             </div>
           </div>
+          <SliderRow
+            label='Reflection'
+            value={stage.environmentIntensity ?? 1.18}
+            min={0} max={2.5} step={0.05}
+            onChange={(v) => onChange('stage', { ...stage, environmentIntensity: v })}
+          />
+          <SliderRow
+            label='Shadow Opacity'
+            value={stage.shadowOpacity ?? 0.34}
+            min={0} max={0.8} step={0.02}
+            onChange={(v) => onChange('stage', { ...stage, shadowOpacity: v })}
+          />
+          <SliderRow
+            label='Shadow Softness'
+            value={stage.shadowBlur ?? 2.8}
+            min={0.5} max={6} step={0.1}
+            onChange={(v) => onChange('stage', { ...stage, shadowBlur: v })}
+          />
         </div>
       )}
 
@@ -325,7 +361,7 @@ export default function EditorSettingsPanel({
           </label>
           <SliderRow
             label='Glare'
-            value={post.glare ?? 0.18}
+            value={post.glare ?? 0.35}
             min={0} max={2} step={0.05}
             onChange={(v) => onChange('postprocessing', { ...post, glare: v })}
           />
@@ -337,7 +373,7 @@ export default function EditorSettingsPanel({
           />
           <SliderRow
             label='Vignette'
-            value={post.vignette ?? 0.2}
+            value={post.vignette ?? 0.16}
             min={0} max={1} step={0.02}
             onChange={(v) => onChange('postprocessing', { ...post, vignette: v })}
           />
@@ -358,6 +394,18 @@ export default function EditorSettingsPanel({
             value={post.saturation ?? 1}
             min={0.2} max={1.8} step={0.05}
             onChange={(v) => onChange('postprocessing', { ...post, saturation: v })}
+          />
+          <SliderRow
+            label='Bloom'
+            value={post.bloomIntensity ?? 0.32}
+            min={0} max={1} step={0.02}
+            onChange={(v) => onChange('postprocessing', { ...post, bloomIntensity: v })}
+          />
+          <SliderRow
+            label='Sharpness'
+            value={post.sharpness ?? 0.1}
+            min={0} max={0.4} step={0.01}
+            onChange={(v) => onChange('postprocessing', { ...post, sharpness: v })}
           />
         </div>
       )}

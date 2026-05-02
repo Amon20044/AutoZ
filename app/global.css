@@ -787,8 +787,7 @@
    PART DETECTION CARDS
    ═══════════════════════════════════════════════════════════════════════════ */
 .az-part-card {
-  display: flex;
-  align-items: center;
+  display: grid;
   gap: 10px;
   padding: 10px 14px;
   border-radius: var(--r-sm);
@@ -822,6 +821,13 @@
   font-size: 16px;
   color: var(--blue-2);
   flex-shrink: 0;
+}
+
+.az-part-card-main {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
 }
 
 .az-part-info {
@@ -866,6 +872,58 @@
 .az-part-score--low {
   background: rgba(240, 84, 106, 0.12);
   color: var(--error);
+}
+
+.az-part-controls {
+  display: grid;
+  gap: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+}
+
+.az-part-control-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 7px;
+}
+
+.az-part-control-grid--triple {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.az-part-control-label,
+.az-part-axis {
+  color: var(--text-dim);
+  font-family: var(--font-mono);
+  font-size: 10px;
+}
+
+.az-part-field {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  color: var(--text-dim);
+  font-family: var(--font-mono);
+  font-size: 10px;
+}
+
+.az-part-field input {
+  width: 100%;
+  min-width: 0;
+  height: 28px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-xs);
+  background: rgba(0, 0, 0, 0.22);
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  padding: 0 7px;
+  outline: none;
+}
+
+.az-part-field input:focus {
+  border-color: var(--blue);
+  box-shadow: 0 0 0 1px rgba(0, 149, 255, 0.18);
 }
 
 
@@ -1558,6 +1616,30 @@
   background: rgba(255, 255, 255, .1);
   font-size: 10px;
   color: currentColor;
+}
+
+.frame-speed-control {
+  height: 36px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 132px;
+  padding: 0 12px;
+  border-radius: var(--r-sm);
+  border: 1px solid var(--border-2);
+  background: rgba(4, 6, 15, 0.76);
+  color: rgba(255, 255, 255, .82);
+  font: 600 11px/1 var(--font-mono);
+  backdrop-filter: blur(10px);
+}
+
+.frame-speed-control input {
+  width: 72px;
+  accent-color: var(--blue);
+}
+
+.frame-speed-control:has(input:disabled) {
+  opacity: .4;
 }
 
 .frame-loading {

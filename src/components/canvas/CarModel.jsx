@@ -1,8 +1,8 @@
 'use client'
 
-import { useEffect, useMemo, useRef } from 'react'
+import { useEffect, useRef } from 'react'
 import { useFrame, useThree } from '@react-three/fiber'
-import * as THREE from 'three'
+import { applyAutomotiveMaterialTuning } from '@/lib/three/studio-rendering'
 
 /**
  * Renders the loaded + normalized car model in the scene.
@@ -10,24 +10,34 @@ import * as THREE from 'three'
  *
  * @param {{ normalizedRoot: THREE.Group | null, registry: PartRegistry | null, interactionEngine: InteractionEngine | null, onPartClick: (part: PartEntry) => void }} props
  */
-export default function CarModel({ normalizedRoot, registry, interactionEngine, onPartClick }) {
+export default function CarModel({
+  normalizedRoot,
+  registry,
+  interactionEngine,
+  onPartClick,
+  renderSettings = {},
+}) {
   const groupRef = useRef()
-  const { raycaster, pointer, camera } = useThree()
+  useThree((state) => state.scene)
+  const reflectionIntensity = renderSettings.reflectionIntensity ?? 1.2
+  const shadows = renderSettings.shadows !== false
 
   // Add the normalized root to our group once
   useEffect(() => {
-    if (!normalizedRoot || !groupRef.current) return
+    const group = groupRef.current
+    if (!normalizedRoot || !group) return
+    applyAutomotiveMaterialTuning(normalizedRoot, { reflectionIntensity, shadows })
     // Clear previous children
-    while (groupRef.current.children.length > 0) {
-      groupRef.current.remove(groupRef.current.children[0])
+    while (group.children.length > 0) {
+      group.remove(group.children[0])
     }
-    groupRef.current.add(normalizedRoot)
+    group.add(normalizedRoot)
     return () => {
-      if (groupRef.current && normalizedRoot.parent === groupRef.current) {
-        groupRef.current.remove(normalizedRoot)
+      if (normalizedRoot.parent === group) {
+        group.remove(normalizedRoot)
       }
     }
-  }, [normalizedRoot])
+  }, [normalizedRoot, reflectionIntensity, shadows])
 
   // Per-frame interaction engine update
   useFrame((state, dt) => {

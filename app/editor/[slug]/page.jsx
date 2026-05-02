@@ -1,5 +1,7 @@
 import EditorPage from '../page'
 
-export default function EditorProjectPage({ params }) {
-  return <EditorPage initialPublishId={params.slug} />
+export default async function EditorProjectPage({ params }) {
+  const { slug } = await params
+
+  return <EditorPage initialPublishId={slug} />
 }

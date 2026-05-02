@@ -53,7 +53,7 @@ export async function GET(request, { params }) {
       return NextResponse.json({ error: 'Database is not configured on this deployment.' }, { status: 500 })
     }
 
-    const { slug } = params
+    const { slug } = await params
 
     const publish = await prisma.publish.findUnique({
       where: { publishSlug: slug },

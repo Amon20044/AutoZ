@@ -1,21 +1,20 @@
 'use client'
 
-import { Suspense, useMemo } from 'react'
+import { Suspense } from 'react'
 import { Canvas } from '@react-three/fiber'
-import {
-  OrbitControls, PerspectiveCamera, Preload,
-  AdaptiveDpr, Environment, ContactShadows,
-} from '@react-three/drei'
+import { AdaptiveDpr, OrbitControls, PerspectiveCamera, Preload } from '@react-three/drei'
 import * as THREE from 'three'
 
-import StudioPlatform from './StudioPlatform'
-import StudioLights from './StudioLights'
+import StudioStage from './StudioStage'
 import CarModel from './CarModel'
 import PartButtons from './PartButtons'
 import PostProcessing, { RendererSettings } from './PostProcessing'
+import { installThreeConsoleFilter } from '@/lib/three/console-filter'
+
+installThreeConsoleFilter()
 
 /**
- * Full 3D viewport canvas — assembles the studio scene.
+ * Full 3D viewport canvas: assembles the studio scene.
  * Responds to sceneConfig changes from the right-side settings panel.
  */
 export default function CarViewer({
@@ -32,24 +31,27 @@ export default function CarViewer({
   const env = sceneConfig.environment ?? { preset: 'studio', background: false }
   const lighting = sceneConfig.lighting ?? {}
   const fog = sceneConfig.fog ?? { enabled: false }
-  const platform = sceneConfig.platform ?? {}
+  const stage = sceneConfig.stage ?? {}
+  const animation = sceneConfig.animation ?? {}
   const cam = sceneConfig.camera ?? {}
   const post = sceneConfig.postprocessing ?? {}
+  const backgroundColor = stage.backgroundColor ?? env.backgroundColor ?? '#f7f7f4'
+  const reflectionIntensity = stage.environmentIntensity ?? 1.18
 
   return (
     <div className='az-viewport'>
       <Canvas
-        shadows
+        shadows={{ type: THREE.PCFShadowMap }}
         gl={{
           antialias: true,
-          alpha: true,
+          alpha: false,
           powerPreference: 'high-performance',
-          toneMapping: THREE.ACESFilmicToneMapping,
+          toneMapping: THREE.AgXToneMapping,
           toneMappingExposure: post.exposure ?? 1.1,
           outputColorSpace: THREE.SRGBColorSpace,
         }}
-        dpr={[1, 1.75]}
-        style={{ background: '#0a0a0f' }}
+        dpr={[1, 2]}
+        style={{ background: backgroundColor }}
       >
         <PerspectiveCamera
           makeDefault
@@ -69,45 +71,16 @@ export default function CarViewer({
           enablePan
           panSpeed={0.5}
           target={[0, 0.8, 0]}
+          autoRotate={animation.autoRotate ?? false}
+          autoRotateSpeed={animation.rotateSpeed ?? 0.35}
         />
 
-        <AdaptiveDpr pixelated />
+        <AdaptiveDpr />
         <RendererSettings exposure={post.exposure ?? 1.1} />
-
-        {/* HDRI environment — responds to config changes */}
-        <Environment preset={env.preset ?? 'studio'} background={env.background ?? false} />
-
-        {/* Fog */}
-        {fog.enabled && (
-          <fog attach='fog' args={[fog.color ?? '#0a0a0f', fog.near ?? 10, fog.far ?? 50]} />
-        )}
+        <StudioStage environment={env} stage={stage} fog={fog} />
 
         <Suspense fallback={null}>
-          {/* Configurable lighting */}
           <ConfigurableLights lighting={lighting} />
-
-          {/* Platform */}
-          {platform.enabled !== false && (
-            <StudioPlatform
-              autoRotate={platform.autoRotate ?? (!normalizedRoot)}
-              rotateSpeed={platform.rotateSpeed ?? 0.12}
-              radius={platform.radius ?? 3}
-              color={platform.color}
-              metalness={platform.metalness}
-              roughness={platform.roughness}
-            />
-          )}
-
-          {/* Contact shadows */}
-          <ContactShadows
-            position={[0, -0.001, 0]}
-            opacity={0.55}
-            blur={1.8}
-            far={6}
-            resolution={512}
-            frames={1}
-            color='#0a0a12'
-          />
 
           {normalizedRoot && (
             <>
@@ -116,6 +89,7 @@ export default function CarViewer({
                 registry={registry}
                 interactionEngine={interactionEngine}
                 onPartClick={onPartClick}
+                renderSettings={{ reflectionIntensity, shadows: stage.shadows !== false }}
               />
               {showPartLabels && <PartButtons parts={parts} onToggle={onToggle} />}
             </>
@@ -126,7 +100,6 @@ export default function CarViewer({
         {post.enabled !== false && <PostProcessing config={post} />}
       </Canvas>
 
-      {/* Viewport stats overlay */}
       {sceneStats && (
         <div className='az-viewport-stats'>
           <div className='az-viewport-stat'>
@@ -142,40 +115,56 @@ export default function CarViewer({
       )}
 
       <div className='az-viewport-hint'>
-        Scroll to zoom · Drag to orbit · Click parts to interact
+        Scroll to zoom - Drag to orbit - Click parts to interact
       </div>
     </div>
   )
 }
 
-/** Lighting component driven by config */
 function ConfigurableLights({ lighting }) {
-  const ambient = lighting?.ambient ?? { enabled: true, intensity: 0.35 }
+  const ambient = lighting?.ambient ?? { enabled: true, intensity: 0.4 }
   const lights = lighting?.lights ?? []
   const lightIntensity = lighting?.intensity ?? 1
 
   return (
     <>
       {ambient.enabled && (
-        <ambientLight color={ambient.color ?? '#ffffff'} intensity={(ambient.intensity ?? 0.35) * lightIntensity} />
+        <ambientLight color={ambient.color ?? '#ffffff'} intensity={(ambient.intensity ?? 0.4) * lightIntensity} />
       )}
-      {lights.map((l, i) => {
-        if (l.type === 'directional') {
+      {lights.map((light, index) => {
+        if (light.type === 'directional') {
           return (
             <directionalLight
-              key={i}
-              position={l.position}
-              intensity={(l.intensity ?? 1) * lightIntensity}
-              color={l.color}
-              castShadow={l.castShadow ?? false}
-              shadow-mapSize-width={1024}
-              shadow-mapSize-height={1024}
+              key={index}
+              position={light.position}
+              intensity={(light.intensity ?? 1) * lightIntensity}
+              color={light.color}
+              castShadow={light.castShadow ?? false}
+              shadow-mapSize-width={light.mapSize ?? 2048}
+              shadow-mapSize-height={light.mapSize ?? 2048}
+              shadow-camera-left={-6}
+              shadow-camera-right={6}
+              shadow-camera-top={6}
+              shadow-camera-bottom={-6}
+              shadow-camera-near={0.2}
+              shadow-camera-far={18}
+              shadow-bias={light.bias ?? -0.00008}
+              shadow-normalBias={light.normalBias ?? 0.018}
             />
           )
         }
-        if (l.type === 'point') {
-          return <pointLight key={i} position={l.position} intensity={(l.intensity ?? 1) * lightIntensity} color={l.color} />
+
+        if (light.type === 'point') {
+          return (
+            <pointLight
+              key={index}
+              position={light.position}
+              intensity={(light.intensity ?? 1) * lightIntensity}
+              color={light.color}
+            />
+          )
         }
+
         return null
       })}
     </>

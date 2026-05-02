@@ -18,6 +18,7 @@ import { applyMaterials } from './material-engine.js'
 import { InteractionEngine } from './interaction-engine.js'
 import { computeAutoFitCamera } from '../math/camera.js'
 import { AdaptiveQuality } from '../math/quality.js'
+import { applyAutomotiveMaterialTuning } from '../../lib/three/studio-rendering.js'
 
 // ─── AutoZ Engine ────────────────────────────────────────────────────────────
 
@@ -84,6 +85,10 @@ export class AutoZEngine {
     if (snapshot.materials?.length) {
       applyMaterials(meshIndex, snapshot.materials, snapshot.reflection?.intensity ?? 1.0)
     }
+    applyAutomotiveMaterialTuning(this._modelRoot, {
+      reflectionIntensity: snapshot.stage?.environmentIntensity ?? snapshot.reflection?.intensity ?? 1.18,
+      shadows: snapshot.stage?.shadows ?? snapshot.platform?.enabled ?? true,
+    })
 
     // Step 11: Build lighting from snapshot
     this._applyLighting(snapshot.lighting)
@@ -151,6 +156,17 @@ export class AutoZEngine {
   toggleLights(forceState = null) {
     if (!this.registry) return false
     const lights = this.registry.lights
+    if (lights.length === 0) return false
+    const shouldTurnOn = forceState ?? lights.some((part) => part.targetState !== 'on')
+    for (const part of lights) {
+      this.interaction.setState(part.id, shouldTurnOn ? 'on' : 'off')
+    }
+    return shouldTurnOn
+  }
+
+  toggleHeadlights(forceState = null) {
+    if (!this.registry) return false
+    const lights = this.registry.headLights.length > 0 ? this.registry.headLights : this.registry.lights
     if (lights.length === 0) return false
     const shouldTurnOn = forceState ?? lights.some((part) => part.targetState !== 'on')
     for (const part of lights) {

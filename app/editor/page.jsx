@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import dynamic from 'next/dynamic'
 import { useRouter } from 'next/navigation'
 import { Eye, EyeOff, LoaderCircle, RotateCcw, Send } from 'lucide-react'
+import * as THREE from 'three'
 
 import ModelUploader from '@/components/dom/ModelUploader'
 import ProcessingLog from '@/components/dom/ProcessingLog'
@@ -21,20 +22,44 @@ const CarViewer = dynamic(
 
 /** Default 3D scene config */
 const DEFAULT_CONFIG = {
-  environment: { preset: 'studio', background: false },
+  environment: { preset: 'studio', background: false, backgroundColor: '#f7f7f4' },
   lighting: {
     intensity: 1,
-    ambient: { enabled: true, color: '#ffffff', intensity: 0.35 },
+    ambient: { enabled: true, color: '#ffffff', intensity: 0.42 },
     lights: [
-      { type: 'directional', position: [4, 6, -4], intensity: 2.2, color: '#ffffff', castShadow: true },
-      { type: 'directional', position: [-4, 3, 3], intensity: 0.8, color: '#dbeafe' },
-      { type: 'directional', position: [0, 4, 6], intensity: 1.1, color: '#ffffff' },
+      { type: 'directional', position: [4.5, 6.5, -4.5], intensity: 2.7, color: '#ffffff', castShadow: true, mapSize: 2048 },
+      { type: 'directional', position: [-5, 3.5, 4], intensity: 0.9, color: '#dbeafe' },
+      { type: 'directional', position: [0, 4.5, 6], intensity: 1.35, color: '#ffffff' },
     ],
   },
-  fog: { enabled: false, color: '#0a0a0f', near: 10, far: 50 },
-  platform: { enabled: true, color: '#e0e0e0', autoRotate: true, rotateSpeed: 0.12, metalness: 0.92, roughness: 0.04, radius: 3 },
+  fog: { enabled: false, color: '#f7f7f4', near: 8, far: 34 },
+  stage: {
+    backgroundColor: '#f7f7f4',
+    shadows: true,
+    shadowOpacity: 0.34,
+    shadowBlur: 2.8,
+    shadowFar: 7.5,
+    shadowScale: 11,
+    shadowResolution: 1024,
+    shadowColor: '#475569',
+    environmentIntensity: 1.18,
+    backgroundIntensity: 0.75,
+  },
+  animation: { autoRotate: false, rotateSpeed: 0.35 },
   camera: { fov: 40, position: [5, 3, -7] },
-  postprocessing: { enabled: true, glare: 0.18, grain: 0.04, vignette: 0.2, exposure: 1.1, contrast: 1, saturation: 1 },
+  postprocessing: {
+    enabled: true,
+    glare: 0.35,
+    grain: 0.06,
+    vignette: 0.16,
+    exposure: 1.08,
+    contrast: 1.08,
+    saturation: 1.04,
+    bloomThreshold: 0.62,
+    bloomIntensity: 0.32,
+    sharpness: 0.1,
+    chromaticAberration: 0.0007,
+  },
 }
 
 const DRAFT_PUBLISH_ID_STORAGE_KEY = 'autoz:draft-publish-id'
@@ -249,7 +274,19 @@ const mergeSceneConfigFromSnapshot = (snapshot = {}) => ({
     lights: snapshot.lighting?.lights ?? DEFAULT_CONFIG.lighting.lights,
   },
   fog: { ...DEFAULT_CONFIG.fog, ...(snapshot.fog ?? {}) },
-  platform: { ...DEFAULT_CONFIG.platform, ...(snapshot.platform ?? {}) },
+  stage: {
+    ...DEFAULT_CONFIG.stage,
+    ...(snapshot.stage ?? {}),
+    ...(snapshot.platform?.enabled === false ? { shadows: false } : {}),
+  },
+  animation: {
+    ...DEFAULT_CONFIG.animation,
+    ...(snapshot.animation ?? {}),
+    ...(snapshot.platform ? {
+      autoRotate: snapshot.platform.autoRotate ?? DEFAULT_CONFIG.animation.autoRotate,
+      rotateSpeed: snapshot.platform.rotateSpeed ?? DEFAULT_CONFIG.animation.rotateSpeed,
+    } : {}),
+  },
   camera: { ...DEFAULT_CONFIG.camera, ...(snapshot.camera ?? {}) },
   postprocessing: { ...DEFAULT_CONFIG.postprocessing, ...(snapshot.postprocessing ?? {}) },
 })
@@ -312,6 +349,7 @@ export default function EditorPage({ initialPublishId = '' }) {
   const [publishResult, setPublishResult] = useState(null) // { slug, embedCode, frameUrl }
   const [toast, setToast] = useState(null)
   const [showPartLabels, setShowPartLabels] = useState(false)
+  const [, setPartRevision] = useState(0)
 
   const interactionRef = useRef(new InteractionEngine())
   const modelFileRef = useRef(null) // Store the original file for publish upload
@@ -435,8 +473,9 @@ export default function EditorPage({ initialPublishId = '' }) {
       modelEntryRef.current = modelEntry
     }
     try {
-      const result = await runImportPipeline(files)
+      const result = await runImportPipeline(files, options.importOptions ?? {})
       setImportResult(result)
+      setPartRevision((value) => value + 1)
       setPhase('ready')
       if (options.preserveTransferProgress) {
         setUploadProgress((prev) => prev ? {
@@ -473,7 +512,10 @@ export default function EditorPage({ initialPublishId = '' }) {
         if (!active) return
 
         if (entries.length > 0) {
-          await handleFiles(entries, { preserveTransferProgress: true })
+          await handleFiles(entries, {
+            preserveTransferProgress: true,
+            importOptions: { parts: snapshot.parts ?? [] },
+          })
           } else {
             setPhase('upload')
           }
@@ -499,6 +541,35 @@ export default function EditorPage({ initialPublishId = '' }) {
     interactionRef.current.toggle(partId)
     setActivePart(partId)
   }, [])
+
+  const handlePartConfigChange = useCallback((partId, patch) => {
+    const part = interactionRef.current && importResult?.registry?.get(partId)
+    if (!part) return
+
+    if (Number.isFinite(patch.closeAngleDeg)) {
+      part.closeAngle = THREE.MathUtils.degToRad(patch.closeAngleDeg)
+    }
+    if (Number.isFinite(patch.openAngleDeg)) {
+      part.openAngle = THREE.MathUtils.degToRad(patch.openAngleDeg)
+    }
+    if (Number.isFinite(patch.spinSpeed)) {
+      part.spinSpeed = patch.spinSpeed
+      if ((part._spinSpeed ?? 0) !== 0) part._spinSpeed = patch.spinSpeed
+    }
+    if (Array.isArray(patch.pivotOffset)) {
+      const offset = new THREE.Vector3(
+        Number.isFinite(patch.pivotOffset[0]) ? patch.pivotOffset[0] : 0,
+        Number.isFinite(patch.pivotOffset[1]) ? patch.pivotOffset[1] : 0,
+        Number.isFinite(patch.pivotOffset[2]) ? patch.pivotOffset[2] : 0,
+      )
+      part.pivotOffset = offset
+      if (part.origin) part.pivot = part.origin.clone().add(offset)
+      part.pivotSource = 'offset'
+    }
+
+    part._currentAngle = part.closeAngle
+    setPartRevision((value) => value + 1)
+  }, [importResult])
 
   // ─── Scene Config Updates ───────────────────────────────────────────────
   const handleConfigChange = useCallback((key, value) => {
@@ -651,6 +722,7 @@ export default function EditorPage({ initialPublishId = '' }) {
     setUploadProgress(null)
     setPublishResult(null)
     setIsEditingExistingPublish(false)
+    setPartRevision((value) => value + 1)
     router.replace('/editor')
     requestPublishId({ replaceStored: true })
   }, [importResult, requestPublishId, router])
@@ -753,6 +825,7 @@ export default function EditorPage({ initialPublishId = '' }) {
                     if (part) handlePartClick(part)
                   }}
                   onToggle={handleToggle}
+                  onPartConfigChange={handlePartConfigChange}
                 />
               </>
             )}

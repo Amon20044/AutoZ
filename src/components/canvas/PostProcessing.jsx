@@ -6,8 +6,9 @@ import * as THREE from 'three'
 
 function createFullscreenTriangle() {
   const geometry = new THREE.BufferGeometry()
-  geometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array([-1, -1, 3, -1, -1, 3]), 2))
+  geometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array([-1, -1, 0, 3, -1, 0, -1, 3, 0]), 3))
   geometry.setAttribute('uv', new THREE.BufferAttribute(new Float32Array([0, 0, 2, 0, 0, 2]), 2))
+  geometry.boundingSphere = new THREE.Sphere(new THREE.Vector3(0, 0, 0), 4)
   return geometry
 }
 
@@ -22,7 +23,7 @@ export function RendererSettings({ exposure = 1.1 }) {
 }
 
 export default function PostProcessing({ config = {} }) {
-  const [{ dpr }, size, gl] = useThree((state) => [state.viewport, state.size, state.gl])
+  const [dpr, size, gl] = useThree((state) => [state.viewport.dpr, state.size, state.gl])
 
   const [screenCamera, screenScene, screen, renderTarget] = useMemo(() => {
     const nextScreenScene = new THREE.Scene()
@@ -34,37 +35,51 @@ export default function PostProcessing({ config = {} }) {
     const nextRenderTarget = new THREE.WebGLRenderTarget(512, 512, {
       samples: 4,
       colorSpace: THREE.SRGBColorSpace,
+      minFilter: THREE.LinearFilter,
+      magFilter: THREE.LinearFilter,
+      stencilBuffer: false,
     })
+    nextRenderTarget.texture.generateMipmaps = false
 
     nextScreen.material = new THREE.RawShaderMaterial({
       uniforms: {
         diffuse: { value: nextRenderTarget.texture },
+        resolution: { value: new THREE.Vector2(512, 512) },
         time: { value: 0 },
         glare: { value: 0 },
         grain: { value: 0 },
         vignette: { value: 0 },
         contrast: { value: 1 },
         saturation: { value: 1 },
+        bloomThreshold: { value: 0.62 },
+        bloomIntensity: { value: 0.28 },
+        sharpness: { value: 0.08 },
+        chromaticAberration: { value: 0.0008 },
       },
       vertexShader: /* glsl */ `
         in vec2 uv;
-        in vec2 position;
+        in vec3 position;
         out vec2 vUv;
         void main() {
           vUv = uv;
-          gl_Position = vec4(position, 0.0, 1.0);
+          gl_Position = vec4(position, 1.0);
         }
       `,
       fragmentShader: /* glsl */ `
         precision highp float;
         out highp vec4 pc_fragColor;
         uniform sampler2D diffuse;
+        uniform vec2 resolution;
         uniform float time;
         uniform float glare;
         uniform float grain;
         uniform float vignette;
         uniform float contrast;
         uniform float saturation;
+        uniform float bloomThreshold;
+        uniform float bloomIntensity;
+        uniform float sharpness;
+        uniform float chromaticAberration;
         in vec2 vUv;
 
         float rand(vec2 co) {
@@ -76,49 +91,76 @@ export default function PostProcessing({ config = {} }) {
           return mix(vec3(luma), color, amount);
         }
 
-        void main() {
-          vec4 base = texture(diffuse, vUv);
-          vec3 color = base.rgb;
+        vec3 sampleScene(vec2 uv) {
+          return texture(diffuse, clamp(uv, vec2(0.0), vec2(1.0))).rgb;
+        }
 
-          float radius = 0.006 + glare * 0.012;
+        vec3 unsharpMask(vec2 uv, vec3 color) {
+          vec2 texel = 1.0 / max(resolution, vec2(1.0));
+          vec3 blur = vec3(0.0);
+          blur += sampleScene(uv + vec2(texel.x, 0.0));
+          blur += sampleScene(uv - vec2(texel.x, 0.0));
+          blur += sampleScene(uv + vec2(0.0, texel.y));
+          blur += sampleScene(uv - vec2(0.0, texel.y));
+          blur *= 0.25;
+          return mix(color, color + (color - blur), sharpness);
+        }
+
+        void main() {
+          vec2 centered = vUv - 0.5;
+          vec2 aberration = centered * chromaticAberration;
+          vec4 base = texture(diffuse, vUv);
+          vec3 color = vec3(
+            texture(diffuse, vUv + aberration).r,
+            base.g,
+            texture(diffuse, vUv - aberration).b
+          );
+
+          float radius = 0.0025 + glare * 0.006;
           vec3 bloom = vec3(0.0);
-          bloom += texture(diffuse, vUv + vec2(radius, 0.0)).rgb;
-          bloom += texture(diffuse, vUv + vec2(-radius, 0.0)).rgb;
-          bloom += texture(diffuse, vUv + vec2(0.0, radius)).rgb;
-          bloom += texture(diffuse, vUv + vec2(0.0, -radius)).rgb;
-          bloom += texture(diffuse, vUv + vec2(radius, radius)).rgb;
-          bloom += texture(diffuse, vUv + vec2(-radius, radius)).rgb;
-          bloom += texture(diffuse, vUv + vec2(radius, -radius)).rgb;
-          bloom += texture(diffuse, vUv + vec2(-radius, -radius)).rgb;
+          bloom += sampleScene(vUv + vec2(radius, 0.0));
+          bloom += sampleScene(vUv + vec2(-radius, 0.0));
+          bloom += sampleScene(vUv + vec2(0.0, radius));
+          bloom += sampleScene(vUv + vec2(0.0, -radius));
+          bloom += sampleScene(vUv + vec2(radius, radius));
+          bloom += sampleScene(vUv + vec2(-radius, radius));
+          bloom += sampleScene(vUv + vec2(radius, -radius));
+          bloom += sampleScene(vUv + vec2(-radius, -radius));
           bloom *= 0.125;
 
-          float bright = smoothstep(0.45, 1.0, dot(bloom, vec3(0.2126, 0.7152, 0.0722)));
-          color += bloom * bright * glare * 0.8;
+          float bright = smoothstep(bloomThreshold, 1.0, dot(bloom, vec3(0.2126, 0.7152, 0.0722)));
+          color += bloom * bright * glare * bloomIntensity;
+          color = unsharpMask(vUv, color);
 
           color = ((color - 0.5) * contrast) + 0.5;
           color = applySaturation(color, saturation);
 
           float grainValue = rand(vUv * 1024.0) - 0.5;
-          color += grainValue * grain * 0.16;
+          float luma = dot(color, vec3(0.2126, 0.7152, 0.0722));
+          color += grainValue * grain * mix(0.08, 0.18, 1.0 - luma);
 
           float dist = distance(vUv, vec2(0.5));
-          float vignetteMask = smoothstep(0.82, 0.25, dist);
+          float vignetteMask = smoothstep(0.86, 0.24, dist);
           color *= mix(1.0, vignetteMask, vignette);
 
-          pc_fragColor = vec4(max(color, vec3(0.0)), base.a);
+          pc_fragColor = vec4(clamp(color, vec3(0.0), vec3(1.0)), base.a);
         }
       `,
       glslVersion: THREE.GLSL3,
+      depthTest: false,
+      depthWrite: false,
     })
 
     return [nextScreenCamera, nextScreenScene, nextScreen, nextRenderTarget]
   }, [])
 
   useEffect(() => {
-    const width = size.width * dpr
-    const height = size.height * dpr
+    const width = Math.max(1, Math.floor(size.width * dpr))
+    const height = Math.max(1, Math.floor(size.height * dpr))
+    const resolution = screen.material.uniforms.resolution.value
     renderTarget.setSize(width, height)
-  }, [dpr, renderTarget, size])
+    resolution.set(width, height)
+  }, [dpr, renderTarget, screen, size])
 
   useEffect(() => {
     return () => renderTarget.dispose()
@@ -132,6 +174,10 @@ export default function PostProcessing({ config = {} }) {
     uniforms.vignette.value = config.vignette ?? 0
     uniforms.contrast.value = config.contrast ?? 1
     uniforms.saturation.value = config.saturation ?? 1
+    uniforms.bloomThreshold.value = config.bloomThreshold ?? 0.62
+    uniforms.bloomIntensity.value = config.bloomIntensity ?? 0.28
+    uniforms.sharpness.value = config.sharpness ?? 0.08
+    uniforms.chromaticAberration.value = config.chromaticAberration ?? 0.0008
 
     gl.setRenderTarget(renderTarget)
     gl.render(scene, camera)
