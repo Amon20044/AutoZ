@@ -17,6 +17,7 @@ import { applyNormalization } from '../math/normalization.js'
 import { applyMaterials } from './material-engine.js'
 import { InteractionEngine } from './interaction-engine.js'
 import { computeAutoFitCamera } from '../math/camera.js'
+import { stableDelta } from '../math/animation.js'
 import { AdaptiveQuality } from '../math/quality.js'
 import { applyAutomotiveMaterialTuning } from '../../lib/three/studio-rendering.js'
 
@@ -37,6 +38,7 @@ export class AutoZEngine {
     this._modelRoot = null      // normalized model group
     this._snapshot = null       // loaded snapshot
     this._camera = null         // active camera
+    this._frameInfo = null
     this._lights = []           // managed lights
 
     this._loaded = false
@@ -72,6 +74,7 @@ export class AutoZEngine {
 
     // Force full world matrix update after adding to scene + normalization
     this._modelRoot.updateWorldMatrix(true, true)
+    this._frameInfo = this._centerModelOnPlatform(this._modelRoot)
 
     // Step 7–8: Index meshes, apply materials
     const { registry, meshIndex, report } = buildPartRegistry(
@@ -128,6 +131,7 @@ export class AutoZEngine {
    */
   update(dt, time) {
     if (!this._loaded || this._paused || !this._visible) return
+    dt = stableDelta(dt)
 
     // Adaptive quality
     this.quality.update(dt)
@@ -210,6 +214,40 @@ export class AutoZEngine {
   pause() { this._paused = true }
   resume() { this._paused = false }
   setVisible(v) { this._visible = v }
+
+  getFrameInfo() {
+    if (!this._modelRoot) return null
+    return this._frameInfo ?? this._centerModelOnPlatform(this._modelRoot)
+  }
+
+  _centerModelOnPlatform(modelRoot) {
+    modelRoot.updateWorldMatrix(true, true)
+    const box = new THREE.Box3().setFromObject(modelRoot)
+    if (box.isEmpty()) return null
+
+    const center = box.getCenter(new THREE.Vector3())
+    const size = box.getSize(new THREE.Vector3())
+    if (!Number.isFinite(center.x) || !Number.isFinite(center.y) || !Number.isFinite(center.z)) {
+      return null
+    }
+
+    modelRoot.position.x -= center.x
+    modelRoot.position.z -= center.z
+    if (Number.isFinite(box.min.y)) modelRoot.position.y -= box.min.y
+    modelRoot.updateWorldMatrix(true, true)
+
+    const nextBox = new THREE.Box3().setFromObject(modelRoot)
+    const nextCenter = nextBox.getCenter(new THREE.Vector3())
+    const nextSize = nextBox.getSize(new THREE.Vector3())
+    return {
+      center: nextCenter.toArray(),
+      size: nextSize.toArray(),
+      min: nextBox.min.toArray(),
+      max: nextBox.max.toArray(),
+      radius: nextSize.length() * 0.5,
+      groundY: nextBox.min.y,
+    }
+  }
 
   // ─── Lighting ────────────────────────────────────────────────────────────
 

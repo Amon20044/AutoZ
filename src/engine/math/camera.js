@@ -51,6 +51,81 @@ export function computeAutoFitCamera(dims, fovDeg = 40, aspect = 16 / 9, padding
   }
 }
 
+export const FRAME_CAMERA_MODES = Object.freeze([
+  { id: 'auto', label: 'Auto Rotate' },
+  { id: 'cockpit', label: 'Interior Cockpit' },
+  { id: 'top', label: 'Top' },
+  { id: 'side', label: 'Side' },
+  { id: 'back', label: 'Back' },
+  { id: 'frontAngle', label: 'Front Angle' },
+  { id: 'rearAngle', label: 'Rear Angle' },
+])
+
+function vectorFromArray(value, fallback = [0, 0, 0]) {
+  const source = Array.isArray(value) ? value : fallback
+  return new THREE.Vector3(source[0] ?? 0, source[1] ?? 0, source[2] ?? 0)
+}
+
+function fitDistanceFromSize(size, fovDeg, aspect, paddingFactor = 0.52) {
+  const width = Math.max(size.x, 0.01)
+  const height = Math.max(size.y, 0.01)
+  const depth = Math.max(size.z, 0.01)
+  const fit = computeAutoFitCamera({ width, height, depth }, fovDeg, aspect, paddingFactor)
+  return fit.distance
+}
+
+export function computeFrameCameraPreset({
+  mode = 'auto',
+  frameInfo = null,
+  fovDeg = 40,
+  aspect = 16 / 9,
+  isMobile = false,
+}) {
+  const center = vectorFromArray(frameInfo?.center, [0, 0.8, 0])
+  const size = vectorFromArray(frameInfo?.size, [6, 2, 3])
+  const height = Math.max(size.y, 0.8)
+  const depth = Math.max(size.z, 1)
+  const baseDistance = fitDistanceFromSize(size, fovDeg, aspect, 0.6) * (isMobile ? 1.4 : 1)
+  const target = center.clone()
+  target.y = Math.max(center.y, height * 0.48)
+
+  const dirs = {
+    auto: new THREE.Vector3(0.78, 0.38, -1),
+    frontAngle: new THREE.Vector3(-0.9, 0.36, -1),
+    rearAngle: new THREE.Vector3(-0.95, 0.34, 1),
+    side: new THREE.Vector3(1, 0.26, 0),
+    back: new THREE.Vector3(0, 0.32, 1),
+    top: new THREE.Vector3(0.03, 1, 0.03),
+  }
+
+  if (mode === 'cockpit') {
+    const cockpitTarget = center.clone()
+    cockpitTarget.y = Math.max(height * 0.58, 0.65)
+    cockpitTarget.z = center.z - depth * 0.04
+
+    const cockpitPosition = cockpitTarget.clone().add(new THREE.Vector3(0.16 * size.x, 0.04 * height, -Math.max(depth * 0.32, 1.05)))
+    return {
+      position: cockpitPosition.toArray(),
+      target: cockpitTarget.toArray(),
+      minDistance: Math.max(depth * 0.12, 0.45),
+      maxDistance: Math.max(baseDistance * 0.85, 2.4),
+      autoRotate: false,
+    }
+  }
+
+  const dir = (dirs[mode] ?? dirs.auto).clone().normalize()
+  const distance = mode === 'top' ? baseDistance * 0.92 : baseDistance
+  const position = target.clone().add(dir.multiplyScalar(distance))
+
+  return {
+    position: position.toArray(),
+    target: target.toArray(),
+    minDistance: Math.max(baseDistance * 0.36, 1.6),
+    maxDistance: Math.max(baseDistance * 1.65, 8),
+    autoRotate: mode === 'auto',
+  }
+}
+
 /**
  * Compute focus camera position for a specific part.
  * Moves camera closer, centering on the part's bounding box.

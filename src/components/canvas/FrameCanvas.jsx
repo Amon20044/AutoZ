@@ -1,12 +1,12 @@
 'use client'
 
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Canvas, useThree } from '@react-three/fiber'
+import { Canvas, useFrame, useThree } from '@react-three/fiber'
 import {
   OrbitControls, PerspectiveCamera, AdaptiveDpr, useGLTF,
 } from '@react-three/drei'
 import * as THREE from 'three'
-import { Disc3, Eye, EyeOff, Lightbulb } from 'lucide-react'
+import { Camera, Disc3, Eye, EyeOff, Lightbulb } from 'lucide-react'
 import PostProcessing, { RendererSettings } from './PostProcessing'
 import PartButtons from './PartButtons'
 import StudioStage from './StudioStage'
@@ -20,6 +20,8 @@ import {
 import { orbitTargetFromImport } from '@/lib/scene/orbit-target'
 import { installThreeConsoleFilter } from '@/lib/three/console-filter'
 import { useDeviceProfile } from '@/hooks/useDeviceProfile'
+import { computeFrameCameraPreset, FRAME_CAMERA_MODES } from '@/engine/math/camera'
+import { dampVec3, stableDelta } from '@/engine/math/animation'
 
 installThreeConsoleFilter()
 
@@ -46,6 +48,9 @@ export default function FrameCanvas({ snapshot }) {
   const [modelLoadError, setModelLoadError] = useState(null)
   const [modelReady, setModelReady] = useState(false)
   const [showPartLabels, setShowPartLabels] = useState(false)
+  const [cameraMode, setCameraMode] = useState('auto')
+  const [frameInfo, setFrameInfo] = useState(null)
+  const controlsRef = useRef(null)
 
   const lightCount = runtime.registry?.headLights.length || runtime.registry?.lights.length || 0
   const wheelCount = runtime.registry?.wheelSpinParts.length ?? 0
@@ -57,6 +62,7 @@ export default function FrameCanvas({ snapshot }) {
   const handleRuntimeReady = useCallback((nextRuntime) => {
     setRuntime(nextRuntime)
     setModelReady(Boolean(nextRuntime?.engine && nextRuntime?.registry))
+    setFrameInfo(nextRuntime?.engine?.getFrameInfo?.() ?? null)
     const savedSpeed = nextRuntime?.registry?.wheelSpinParts?.find((part) => Number.isFinite(part.spinSpeed))?.spinSpeed
     if (Number.isFinite(savedSpeed)) setWheelSpeed(savedSpeed)
   }, [])
@@ -101,15 +107,26 @@ export default function FrameCanvas({ snapshot }) {
         <RendererSettings exposure={post.exposure ?? 1.1} />
 
         <OrbitControls
+          ref={controlsRef}
           enableDamping
-          dampingFactor={0.08}
+          dampingFactor={0.1}
           minPolarAngle={0.3}
           maxPolarAngle={Math.PI / 2 - 0.05}
           minDistance={2}
           maxDistance={12}
-          enablePan
-          panSpeed={0.5}
+          enablePan={false}
+          touches={{ ONE: THREE.TOUCH.ROTATE, TWO: THREE.TOUCH.DOLLY_ROTATE }}
           target={orbitTarget}
+          autoRotate={cameraMode === 'auto'}
+          autoRotateSpeed={snapshot.animation?.rotateSpeed ?? 0.35}
+        />
+
+        <FrameCameraRig
+          mode={cameraMode}
+          controlsRef={controlsRef}
+          frameInfo={frameInfo}
+          fallbackTarget={orbitTarget}
+          snapshot={snapshot}
         />
 
         <AdaptiveDpr />
@@ -170,6 +187,20 @@ export default function FrameCanvas({ snapshot }) {
       )}
 
       <div className='frame-controls' aria-label='Vehicle controls'>
+        <label className='frame-camera-control' title='Camera angle'>
+          <span className='frame-control-icon'>
+            <Camera size={13} strokeWidth={2.3} aria-hidden='true' />
+          </span>
+          <select
+            value={cameraMode}
+            onChange={(e) => setCameraMode(e.target.value)}
+            aria-label='Camera angle'
+          >
+            {FRAME_CAMERA_MODES.map((mode) => (
+              <option key={mode.id} value={mode.id}>{mode.label}</option>
+            ))}
+          </select>
+        </label>
         <button
           type='button'
           className={`frame-control ${lightsOn ? 'frame-control--active' : ''}`}
@@ -251,6 +282,80 @@ function getFrameAssetManifest(snapshot) {
     ?? snapshot.model?.assetManifest
     ?? snapshot.assets?.assetManifest
     ?? null
+}
+
+function FrameCameraRig({
+  mode, controlsRef, frameInfo, fallbackTarget, snapshot,
+}) {
+  const { camera, size } = useThree()
+  const desired = useRef({
+    position: new THREE.Vector3(...(snapshot.camera?.position ?? [5, 3, -7])),
+    target: new THREE.Vector3(...fallbackTarget),
+    minDistance: 2,
+    maxDistance: 12,
+    autoRotate: mode === 'auto',
+  })
+  const previousMode = useRef(mode)
+  const autoSettleUntil = useRef(0)
+
+  useEffect(() => {
+    const isMobile = size.width <= 720 || (typeof navigator !== 'undefined' && navigator.maxTouchPoints > 1)
+    const preset = computeFrameCameraPreset({
+      mode,
+      frameInfo,
+      fovDeg: snapshot.camera?.fov ?? 40,
+      aspect: size.width / Math.max(size.height, 1),
+      isMobile,
+    })
+
+    desired.current.position.fromArray(preset.position)
+    desired.current.target.fromArray(preset.target)
+    desired.current.minDistance = preset.minDistance
+    desired.current.maxDistance = preset.maxDistance
+    desired.current.autoRotate = preset.autoRotate
+
+    const controls = controlsRef.current
+    if (controls) {
+      controls.minDistance = preset.minDistance
+      controls.maxDistance = preset.maxDistance
+      controls.autoRotate = preset.autoRotate
+      controls.enablePan = false
+    }
+
+    if (previousMode.current !== mode && mode === 'auto') {
+      autoSettleUntil.current = performance.now() + 900
+    } else if (previousMode.current !== mode) {
+      autoSettleUntil.current = 0
+    }
+    previousMode.current = mode
+  }, [controlsRef, fallbackTarget, frameInfo, mode, size.height, size.width, snapshot.camera?.fov])
+
+  useFrame((_, rawDt) => {
+    const dt = stableDelta(rawDt)
+    const controls = controlsRef.current
+    const target = desired.current.target
+    const position = desired.current.position
+    const smoothness = mode === 'cockpit' ? 12 : 8.5
+    const isSettlingAuto = mode === 'auto' && performance.now() < autoSettleUntil.current
+
+    if (controls) {
+      dampVec3(controls.target, target, 10, dt)
+      controls.minDistance = desired.current.minDistance
+      controls.maxDistance = desired.current.maxDistance
+      controls.autoRotate = desired.current.autoRotate
+    }
+
+    if (mode !== 'auto' || isSettlingAuto) {
+      dampVec3(camera.position, position, smoothness, dt)
+    }
+
+    const radius = Math.max(frameInfo?.radius ?? 4, 1)
+    camera.near = Math.max(0.01, camera.position.distanceTo(target) - radius * 2.25)
+    camera.far = Math.max(80, camera.position.distanceTo(target) + radius * 6)
+    camera.updateProjectionMatrix()
+  })
+
+  return null
 }
 
 function isStandaloneGltfUrl(raw) {
@@ -338,7 +443,7 @@ function FrameRuntimeLoader({
     }
 
     if (!chunked) {
-      const directUrl = normalizeStorageUrl(manifest.url)
+      const directUrl = normalizeStorageUrl(modelPayload.url)
       if (!directUrl) {
         onError?.('Model URL is missing.')
       } else {

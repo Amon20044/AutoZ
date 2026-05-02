@@ -4,7 +4,12 @@
  */
 
 import * as THREE from 'three'
-import { damp, SmoothColor, blinkHard, blinkSmooth } from '../math/animation.js'
+import { damp, SmoothColor, blinkHard, blinkSmooth, stableDelta } from '../math/animation.js'
+
+const scratchOffset = new THREE.Vector3()
+const scratchWorldPos = new THREE.Vector3()
+const scratchQuat = new THREE.Quaternion()
+const scratchColor = new THREE.Color()
 
 function getAnimatedObjects(part) {
   return part.controlObjects?.length ? part.controlObjects : part.meshObjects
@@ -25,13 +30,14 @@ function applyWorldTransform(object, worldPosition, worldQuaternion) {
 }
 
 export function updateHinge(part, dt) {
+  dt = stableDelta(dt)
   const objects = getAnimatedObjects(part)
   if (!part.pivot || !part.axis || objects.length === 0) return
 
   const targetAngle = part.targetState === 'open' ? part.openAngle : part.closeAngle
   part._currentAngle = damp(part._currentAngle ?? part.closeAngle, targetAngle, part.lambda, dt)
 
-  const q = new THREE.Quaternion().setFromAxisAngle(part.axis, part._currentAngle)
+  const q = scratchQuat.setFromAxisAngle(part.axis, part._currentAngle)
 
   for (let i = 0; i < objects.length; i++) {
     const object = objects[i]
@@ -39,15 +45,15 @@ export function updateHinge(part, dt) {
     const origWQ = part._originalWorldQuaternions?.[i]
     if (!origWP || !origWQ) continue
 
-    const offset = new THREE.Vector3().subVectors(origWP, part.pivot)
-    const rotated = offset.applyQuaternion(q)
-    const newWorldPos = new THREE.Vector3().copy(part.pivot).add(rotated)
+    scratchOffset.subVectors(origWP, part.pivot).applyQuaternion(q)
+    scratchWorldPos.copy(part.pivot).add(scratchOffset)
     const newWorldQuat = new THREE.Quaternion().multiplyQuaternions(q, origWQ)
-    applyWorldTransform(object, newWorldPos, newWorldQuat)
+    applyWorldTransform(object, scratchWorldPos, newWorldQuat)
   }
 }
 
 export function updateToggle(part, dt) {
+  dt = stableDelta(dt)
   if (part.meshObjects.length === 0) return
 
   const matConfig = part.material
@@ -55,12 +61,14 @@ export function updateToggle(part, dt) {
   const targetIntensity = isOn ? (matConfig?.on?.emissiveIntensity ?? 4.5) : 0
   const targetColor = isOn ? (matConfig?.on?.emissiveColor ?? '#fff4cc') : '#000000'
   part._emissiveIntensity = damp(part._emissiveIntensity ?? 0, targetIntensity, part.lambda, dt)
+  scratchColor.set(targetColor)
+  const alpha = 1 - Math.exp(-part.lambda * dt)
 
   for (const mesh of part.meshObjects) {
     const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material]
     for (const mat of mats) {
       if (mat.emissive !== undefined) {
-        mat.emissive.lerp(new THREE.Color(targetColor), 1 - Math.exp(-part.lambda * dt))
+        mat.emissive.lerp(scratchColor, alpha)
         mat.emissiveIntensity = part._emissiveIntensity
         mat.needsUpdate = false
       }
@@ -89,6 +97,7 @@ export function updateBlink(part, time) {
 }
 
 export function updateColorChange(part, targetColor, dt) {
+  dt = stableDelta(dt)
   if (!targetColor || part.meshObjects.length === 0) return
 
   part._colorSmoother = part._colorSmoother ?? new SmoothColor(targetColor, part.lambda)
@@ -104,12 +113,13 @@ export function updateColorChange(part, targetColor, dt) {
 }
 
 export function updateSpin(part, dt, speed = 0) {
+  dt = stableDelta(dt)
   const objects = getAnimatedObjects(part)
   const axis = part.spinAxis || part.axis
   if (!axis || objects.length === 0 || speed === 0) return
 
   part._spinAngle = (part._spinAngle ?? 0) + speed * dt
-  const q = new THREE.Quaternion().setFromAxisAngle(axis, part._spinAngle)
+  const q = scratchQuat.setFromAxisAngle(axis, part._spinAngle)
 
   for (let i = 0; i < objects.length; i++) {
     const object = objects[i]
@@ -118,15 +128,15 @@ export function updateSpin(part, dt, speed = 0) {
     if (!origWP || !origWQ) continue
 
     const pivot = part.pivot || part.origin || origWP
-    const offset = new THREE.Vector3().subVectors(origWP, pivot)
-    const rotated = offset.applyQuaternion(q)
-    const newWorldPos = new THREE.Vector3().copy(pivot).add(rotated)
+    scratchOffset.subVectors(origWP, pivot).applyQuaternion(q)
+    scratchWorldPos.copy(pivot).add(scratchOffset)
     const newWorldQuat = new THREE.Quaternion().multiplyQuaternions(q, origWQ)
-    applyWorldTransform(object, newWorldPos, newWorldQuat)
+    applyWorldTransform(object, scratchWorldPos, newWorldQuat)
   }
 }
 
 export function updateTint(part, targetOpacity, dt) {
+  dt = stableDelta(dt)
   if (part.meshObjects.length === 0) return
   part._opacity = damp(part._opacity ?? 0.45, targetOpacity, part.lambda, dt)
   for (const mesh of part.meshObjects) {
@@ -153,6 +163,7 @@ export class InteractionEngine {
   setSpin(partId, speed) { this._commands.set(partId, { type: 'spin', payload: speed }) }
 
   update(registry, dt, time) {
+    dt = stableDelta(dt)
     for (const [partId, cmd] of this._commands) {
       const part = registry.get(partId)
       if (!part) continue

@@ -4,12 +4,19 @@
  */
 import * as THREE from 'three'
 
+export const DEFAULT_FRAME_DT = 1 / 60
+export const MAX_STABLE_DT = 1 / 30
+
+export function stableDelta(dt, fallback = DEFAULT_FRAME_DT, max = MAX_STABLE_DT) {
+  return Number.isFinite(dt) && dt > 0 ? Math.min(dt, max) : fallback
+}
+
 // ─── Exponential Damping ────────────────────────────────────────────────────
 // θ_next = θ_current + (θ_target − θ_current)(1 − e^(−λΔt))
 
 /** Damping alpha: α = 1 − e^(−λΔt) */
 export function dampAlpha(lambda, dt) {
-  return 1.0 - Math.exp(-lambda * dt)
+  return 1.0 - Math.exp(-lambda * stableDelta(dt))
 }
 
 /** Scalar exponential damp */
@@ -120,7 +127,7 @@ export class SmoothValue {
 
   update(dt) {
     if (this.isSettled) { this.current = this.target; return this.current }
-    this.current = damp(this.current, this.target, this.lambda, dt)
+    this.current = damp(this.current, this.target, this.lambda, stableDelta(dt))
     return this.current
   }
 }
@@ -145,7 +152,7 @@ export class SmoothColor {
 
   update(dt) {
     if (this.isSettled) { this.current.copy(this.target); return this.current }
-    dampColor(this.current, this.target, this.lambda, dt)
+    dampColor(this.current, this.target, this.lambda, stableDelta(dt))
     return this.current
   }
 }
