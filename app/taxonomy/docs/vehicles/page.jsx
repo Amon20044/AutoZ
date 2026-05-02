@@ -130,6 +130,7 @@ export default function VehicleTaxonomyPage() {
 
           <div className='taxonomy-engine-card'>
             <BrainCircuit size={30} />
+            <div className='taxonomy-engine-badge'>Advanced animation engine</div>
             <h3>AutoZ Predictor</h3>
             <p>Exact tokens, regex patterns, fuzzy matching, weights, and confidence thresholds.</p>
             <div className='taxonomy-scanline' />

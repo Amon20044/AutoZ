@@ -4,14 +4,17 @@ import Link from 'next/link'
 import {
   ArrowRight,
   Boxes,
+  BrainCircuit,
   Camera,
   Check,
   DoorOpen,
-  Eye,
-  FileCheck,
+  Gauge,
   Lightbulb,
+  Monitor,
   Palette,
   ShieldCheck,
+  Smartphone,
+  Store,
   Upload,
   Wand2,
 } from 'lucide-react'
@@ -146,18 +149,26 @@ export default function LandingPage() {
           <h2>From upload to production iframe.</h2>
           <p>Normalize the model, approve detected parts, tune camera presets, test desktop/mobile preview, and publish a frozen runtime URL.</p>
         </div>
-        <div className='landing-flow'>
-          {[
-            [Wand2, 'Normalize', 'Scale, forward axis, center of mass, and ground placement.'],
-            [Eye, 'Configure', 'Parts, shadows, materials, cameras, cockpit, mobile preview.'],
-            [FileCheck, 'Publish', 'Stable iframe URL with locked runtime controls.'],
-          ].map(([Icon, title, body]) => (
-            <article key={title}>
-              <Icon size={20} />
-              <h3>{title}</h3>
-              <p>{body}</p>
-            </article>
-          ))}
+        <div className='landing-mini-chain'>
+          <div className='landing-mini-stack'>
+            <div><Upload size={17} /> GLB / GLTF</div>
+            <div><Wand2 size={17} /> Mesh names</div>
+            <div><Gauge size={17} /> Origins</div>
+          </div>
+          <div className='taxonomy-connector' />
+          <div className='taxonomy-engine-card landing-engine-card'>
+            <BrainCircuit size={28} />
+            <div className='taxonomy-engine-badge'>Advanced animation engine</div>
+            <h3>AutoZ Predictor</h3>
+            <p>Detects parts, pivots, cameras, materials, and publish-ready interactions.</p>
+            <div className='taxonomy-scanline' />
+          </div>
+          <div className='taxonomy-connector' />
+          <div className='landing-mini-stack'>
+            <div><Monitor size={17} /> Desktop iframe</div>
+            <div><Smartphone size={17} /> Mobile viewer</div>
+            <div><Store size={17} /> Shopify + stores</div>
+          </div>
         </div>
       </section>
 
