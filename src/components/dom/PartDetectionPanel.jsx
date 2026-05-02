@@ -61,13 +61,14 @@ export default function PartDetectionPanel({
         const score = Math.round((part.detection?.score ?? 0) * 100)
         const isActive = activePart === part.id
         const isOpen = part.currentState === 'open' || part.currentState === 'on'
+        const isEnabled = part.animationEnabled !== false
         const scoreClass = score >= 75 ? 'high' : score >= 50 ? 'mid' : 'low'
         const Icon = PART_ICONS[part.category] ?? PART_ICONS.unknown
 
         return (
           <div
             key={part.id}
-            className={`az-part-card ${isActive ? 'az-part-card--active' : ''}`}
+            className={`az-part-card ${isActive ? 'az-part-card--active' : ''} ${!isEnabled ? 'az-part-card--disabled' : ''}`}
             onClick={() => onPartClick?.(part.id)}
           >
             <div className='az-part-card-main'>
@@ -83,9 +84,22 @@ export default function PartDetectionPanel({
               <span className={`az-part-score az-part-score--${scoreClass}`}>
                 {score}%
               </span>
+              <label
+                className='az-part-enable'
+                title={isEnabled ? 'Disable this part animation' : 'Enable this part animation'}
+                onClick={(e) => e.stopPropagation()}
+              >
+                <input
+                  type='checkbox'
+                  checked={isEnabled}
+                  onChange={(e) => onPartConfigChange?.(part.id, { animationEnabled: e.target.checked })}
+                />
+                <span />
+              </label>
               <button
                 className={`az-btn az-btn--sm ${isOpen ? 'az-btn--primary' : ''}`}
                 onClick={(e) => { e.stopPropagation(); onToggle?.(part.id) }}
+                disabled={!isEnabled}
                 title={isOpen ? 'Close / Off' : 'Open / On'}
               >
                 {isOpen

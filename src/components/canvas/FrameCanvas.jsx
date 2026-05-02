@@ -48,7 +48,7 @@ export default function FrameCanvas({ snapshot }) {
   const [modelLoadError, setModelLoadError] = useState(null)
   const [modelReady, setModelReady] = useState(false)
   const [showPartLabels, setShowPartLabels] = useState(false)
-  const [cameraMode, setCameraMode] = useState('auto')
+  const [cameraMode, setCameraMode] = useState(snapshot.camera?.frame?.selectedMode ?? 'auto')
   const [frameInfo, setFrameInfo] = useState(null)
   const controlsRef = useRef(null)
 
@@ -127,6 +127,7 @@ export default function FrameCanvas({ snapshot }) {
           frameInfo={frameInfo}
           fallbackTarget={orbitTarget}
           snapshot={snapshot}
+          cameraSettings={snapshot.camera?.frame}
         />
 
         <AdaptiveDpr />
@@ -205,6 +206,7 @@ export default function FrameCanvas({ snapshot }) {
           type='button'
           className={`frame-control ${lightsOn ? 'frame-control--active' : ''}`}
           onClick={toggleLights}
+          aria-pressed={lightsOn}
           disabled={!runtime.engine || lightCount === 0}
           title={lightCount > 0 ? 'Toggle headlights' : 'No headlights detected'}
         >
@@ -217,6 +219,7 @@ export default function FrameCanvas({ snapshot }) {
           type='button'
           className={`frame-control ${wheelsOn ? 'frame-control--active' : ''}`}
           onClick={toggleWheels}
+          aria-pressed={wheelsOn}
           disabled={!runtime.engine || wheelCount === 0}
           title={wheelCount > 0 ? 'Toggle wheel spin' : 'No wheels detected'}
         >
@@ -241,6 +244,7 @@ export default function FrameCanvas({ snapshot }) {
           type='button'
           className={`frame-control ${showPartLabels ? 'frame-control--active' : ''}`}
           onClick={() => setShowPartLabels((prev) => !prev)}
+          aria-pressed={showPartLabels}
           disabled={!runtime.engine}
           title={showPartLabels ? 'Hide part labels' : 'Show part labels'}
         >
@@ -285,7 +289,7 @@ function getFrameAssetManifest(snapshot) {
 }
 
 function FrameCameraRig({
-  mode, controlsRef, frameInfo, fallbackTarget, snapshot,
+  mode, controlsRef, frameInfo, fallbackTarget, snapshot, cameraSettings,
 }) {
   const { camera, size } = useThree()
   const desired = useRef({
@@ -306,53 +310,54 @@ function FrameCameraRig({
       fovDeg: snapshot.camera?.fov ?? 40,
       aspect: size.width / Math.max(size.height, 1),
       isMobile,
+      cameraSettings,
     })
 
     desired.current.position.fromArray(preset.position)
     desired.current.target.fromArray(preset.target)
     desired.current.minDistance = preset.minDistance
     desired.current.maxDistance = preset.maxDistance
-    desired.current.autoRotate = preset.autoRotate
+    desired.current.autoRotate = mode === 'auto'
 
     const controls = controlsRef.current
     if (controls) {
       controls.minDistance = preset.minDistance
       controls.maxDistance = preset.maxDistance
-      controls.autoRotate = preset.autoRotate
+      controls.autoRotate = mode === 'auto'
       controls.enablePan = false
     }
 
-    if (previousMode.current !== mode && mode === 'auto') {
-      autoSettleUntil.current = performance.now() + 900
-    } else if (previousMode.current !== mode) {
-      autoSettleUntil.current = 0
-    }
+    autoSettleUntil.current = performance.now() + (previousMode.current === mode ? 500 : 650)
     previousMode.current = mode
-  }, [controlsRef, fallbackTarget, frameInfo, mode, size.height, size.width, snapshot.camera?.fov])
+  }, [cameraSettings, controlsRef, fallbackTarget, frameInfo, mode, size.height, size.width, snapshot.camera?.fov])
 
   useFrame((_, rawDt) => {
     const dt = stableDelta(rawDt)
     const controls = controlsRef.current
     const target = desired.current.target
     const position = desired.current.position
-    const smoothness = mode === 'cockpit' ? 12 : 8.5
-    const isSettlingAuto = mode === 'auto' && performance.now() < autoSettleUntil.current
+    const isSettling = performance.now() < autoSettleUntil.current
+    const smoothness = mode === 'cockpit' ? 18 : 16
 
     if (controls) {
-      dampVec3(controls.target, target, 10, dt)
+      if (mode !== 'auto' || isSettling) {
+        dampVec3(controls.target, target, 18, dt)
+      }
       controls.minDistance = desired.current.minDistance
       controls.maxDistance = desired.current.maxDistance
-      controls.autoRotate = desired.current.autoRotate
+      controls.autoRotate = mode === 'auto'
     }
 
-    if (mode !== 'auto' || isSettlingAuto) {
+    if (mode !== 'auto' || isSettling) {
       dampVec3(camera.position, position, smoothness, dt)
     }
 
-    const radius = Math.max(frameInfo?.radius ?? 4, 1)
-    camera.near = Math.max(0.01, camera.position.distanceTo(target) - radius * 2.25)
-    camera.far = Math.max(80, camera.position.distanceTo(target) + radius * 6)
-    camera.updateProjectionMatrix()
+    if (isSettling) {
+      const radius = Math.max(frameInfo?.radius ?? 4, 1)
+      camera.near = Math.max(0.01, camera.position.distanceTo(target) - radius * 2.25)
+      camera.far = Math.max(80, camera.position.distanceTo(target) + radius * 6)
+      camera.updateProjectionMatrix()
+    }
   })
 
   return null

@@ -199,7 +199,7 @@ export class AutoZEngine {
   onMeshClick(mesh) {
     if (!this.registry) return null
     // Find part that owns this mesh
-    for (const part of this.registry.interactive) {
+    for (const part of this.registry.enabledInteractive) {
       if (part.meshObjects.includes(mesh)) {
         this.toggle(part.id)
         return part

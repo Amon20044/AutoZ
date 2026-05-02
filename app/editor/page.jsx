@@ -13,6 +13,7 @@ import EditorSettingsPanel from '@/components/dom/EditorSettingsPanel'
 import { runImportPipeline } from '@/engine/pipeline/import-pipeline'
 import { InteractionEngine } from '@/engine/core/interaction-engine'
 import { fetchModelBlob, normalizeStorageUrl } from '@/lib/model/chunked-model'
+import { DEFAULT_FRAME_CAMERA_SETTINGS } from '@/engine/math/camera'
 
 // Dynamic import for the 3D viewer (no SSR)
 const CarViewer = dynamic(
@@ -52,7 +53,7 @@ const DEFAULT_CONFIG = {
   },
   animation: { autoRotate: false, rotateSpeed: 0.35 },
   import: {},
-  camera: { fov: 40, position: [5, 3, -7] },
+  camera: { fov: 40, position: [5, 3, -7], frame: DEFAULT_FRAME_CAMERA_SETTINGS },
   postprocessing: {
     enabled: true,
     glare: 0.35,
@@ -550,13 +551,16 @@ export default function EditorPage({ initialPublishId = '' }) {
   // ─── Part Interactions ──────────────────────────────────────────────────
   const handlePartClick = useCallback((part) => {
     setActivePart(part.id)
+    if (part.animationEnabled === false) return
     interactionRef.current.toggle(part.id)
   }, [])
 
   const handleToggle = useCallback((partId) => {
+    const part = importResult?.registry?.get(partId)
+    if (part?.animationEnabled === false) return
     interactionRef.current.toggle(partId)
     setActivePart(partId)
-  }, [])
+  }, [importResult])
 
   const handlePartConfigChange = useCallback((partId, patch) => {
     const part = interactionRef.current && importResult?.registry?.get(partId)
@@ -571,6 +575,14 @@ export default function EditorPage({ initialPublishId = '' }) {
     if (Number.isFinite(patch.spinSpeed)) {
       part.spinSpeed = patch.spinSpeed
       if ((part._spinSpeed ?? 0) !== 0) part._spinSpeed = patch.spinSpeed
+    }
+    if (typeof patch.animationEnabled === 'boolean') {
+      part.animationEnabled = patch.animationEnabled
+      if (!patch.animationEnabled) {
+        part.targetState = part.defaultState
+        part.currentState = part.defaultState
+        part._spinSpeed = 0
+      }
     }
     if (Array.isArray(patch.pivotOffset)) {
       const offset = new THREE.Vector3(

@@ -61,9 +61,34 @@ export const FRAME_CAMERA_MODES = Object.freeze([
   { id: 'rearAngle', label: 'Rear Angle' },
 ])
 
+export const DEFAULT_FRAME_CAMERA_SETTINGS = Object.freeze({
+  selectedMode: 'auto',
+  mobileDistanceMultiplier: 1.4,
+  presets: {
+    auto: { offset: [0, 0, 0], targetOffset: [0, 0, 0], distanceScale: 1 },
+    cockpit: { offset: [0, 0, 0], targetOffset: [0, 0, 0], distanceScale: 1 },
+    top: { offset: [0, 0, 0], targetOffset: [0, 0, 0], distanceScale: 1 },
+    side: { offset: [0, 0, 0], targetOffset: [0, 0, 0], distanceScale: 1 },
+    back: { offset: [0, 0, 0], targetOffset: [0, 0, 0], distanceScale: 1 },
+    frontAngle: { offset: [0, 0, 0], targetOffset: [0, 0, 0], distanceScale: 1 },
+    rearAngle: { offset: [0, 0, 0], targetOffset: [0, 0, 0], distanceScale: 1 },
+  },
+})
+
 function vectorFromArray(value, fallback = [0, 0, 0]) {
   const source = Array.isArray(value) ? value : fallback
   return new THREE.Vector3(source[0] ?? 0, source[1] ?? 0, source[2] ?? 0)
+}
+
+function getPresetSettings(cameraSettings, mode) {
+  return {
+    ...DEFAULT_FRAME_CAMERA_SETTINGS.presets[mode],
+    ...(cameraSettings?.presets?.[mode] ?? {}),
+  }
+}
+
+function finiteNumber(value, fallback) {
+  return Number.isFinite(value) ? value : fallback
 }
 
 function fitDistanceFromSize(size, fovDeg, aspect, paddingFactor = 0.52) {
@@ -80,30 +105,38 @@ export function computeFrameCameraPreset({
   fovDeg = 40,
   aspect = 16 / 9,
   isMobile = false,
+  cameraSettings = null,
 }) {
   const center = vectorFromArray(frameInfo?.center, [0, 0.8, 0])
   const size = vectorFromArray(frameInfo?.size, [6, 2, 3])
+  const settings = getPresetSettings(cameraSettings, mode)
+  const offset = vectorFromArray(settings.offset)
+  const targetOffset = vectorFromArray(settings.targetOffset)
   const height = Math.max(size.y, 0.8)
   const depth = Math.max(size.z, 1)
-  const baseDistance = fitDistanceFromSize(size, fovDeg, aspect, 0.6) * (isMobile ? 1.4 : 1)
+  const mobileMultiplier = finiteNumber(cameraSettings?.mobileDistanceMultiplier, DEFAULT_FRAME_CAMERA_SETTINGS.mobileDistanceMultiplier)
+  const distanceScale = Math.max(0.35, finiteNumber(settings.distanceScale, 1))
+  const baseDistance = fitDistanceFromSize(size, fovDeg, aspect, 0.6) * (isMobile ? mobileMultiplier : 1) * distanceScale
   const target = center.clone()
   target.y = Math.max(center.y, height * 0.48)
+  target.add(targetOffset)
 
   const dirs = {
-    auto: new THREE.Vector3(0.78, 0.38, -1),
-    frontAngle: new THREE.Vector3(-0.9, 0.36, -1),
-    rearAngle: new THREE.Vector3(-0.95, 0.34, 1),
+    auto: new THREE.Vector3(0.78, 0.38, 1),
+    frontAngle: new THREE.Vector3(-0.9, 0.36, 1),
+    rearAngle: new THREE.Vector3(-0.95, 0.34, -1),
     side: new THREE.Vector3(1, 0.26, 0),
-    back: new THREE.Vector3(0, 0.32, 1),
+    back: new THREE.Vector3(0, 0.32, -1),
     top: new THREE.Vector3(0.03, 1, 0.03),
   }
 
   if (mode === 'cockpit') {
     const cockpitTarget = center.clone()
     cockpitTarget.y = Math.max(height * 0.58, 0.65)
-    cockpitTarget.z = center.z - depth * 0.04
+    cockpitTarget.z = center.z + depth * 0.04
+    cockpitTarget.add(targetOffset)
 
-    const cockpitPosition = cockpitTarget.clone().add(new THREE.Vector3(0.16 * size.x, 0.04 * height, -Math.max(depth * 0.32, 1.05)))
+    const cockpitPosition = cockpitTarget.clone().add(new THREE.Vector3(0.16 * size.x, 0.04 * height, Math.max(depth * 0.32, 1.05))).add(offset)
     return {
       position: cockpitPosition.toArray(),
       target: cockpitTarget.toArray(),
@@ -115,7 +148,7 @@ export function computeFrameCameraPreset({
 
   const dir = (dirs[mode] ?? dirs.auto).clone().normalize()
   const distance = mode === 'top' ? baseDistance * 0.92 : baseDistance
-  const position = target.clone().add(dir.multiplyScalar(distance))
+  const position = target.clone().add(dir.multiplyScalar(distance)).add(offset)
 
   return {
     position: position.toArray(),

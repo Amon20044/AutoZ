@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import {
   Building2,
+  Camera,
   ChevronDown,
   Circle,
   Clapperboard,
@@ -21,6 +22,7 @@ import {
   Trees,
   Warehouse,
 } from 'lucide-react'
+import { DEFAULT_FRAME_CAMERA_SETTINGS, FRAME_CAMERA_MODES } from '@/engine/math/camera'
 
 /** Available HDRI presets from drei */
 const HDRI_PRESETS = [
@@ -71,8 +73,39 @@ export default function EditorSettingsPanel({
   const fog = config.fog ?? { enabled: false, color: '#f7f7f4', near: 8, far: 34 }
   const stage = config.stage ?? { backgroundColor: '#f7f7f4', shadows: true, shadowOpacity: 0.34, shadowBlur: 2.8, environmentIntensity: 1.18 }
   const animation = config.animation ?? { autoRotate: false, rotateSpeed: 0.35 }
+  const camera = config.camera ?? { fov: 40, frame: DEFAULT_FRAME_CAMERA_SETTINGS }
+  const frameCamera = {
+    ...DEFAULT_FRAME_CAMERA_SETTINGS,
+    ...(camera.frame ?? {}),
+    presets: {
+      ...DEFAULT_FRAME_CAMERA_SETTINGS.presets,
+      ...(camera.frame?.presets ?? {}),
+    },
+  }
+  const selectedCameraMode = frameCamera.selectedMode ?? 'auto'
+  const selectedCameraPreset = {
+    ...DEFAULT_FRAME_CAMERA_SETTINGS.presets[selectedCameraMode],
+    ...(frameCamera.presets?.[selectedCameraMode] ?? {}),
+  }
   const post = config.postprocessing ?? { enabled: true, glare: 0.35, grain: 0.06, vignette: 0.16, exposure: 1.08, contrast: 1.08, saturation: 1.04, bloomIntensity: 0.32, sharpness: 0.1 }
   const showPublishProgress = isPublishing || publishProgress.some((step) => step.status !== 'pending')
+  const updateFrameCamera = (patch) => {
+    onChange('camera', { ...camera, frame: { ...frameCamera, ...patch } })
+  }
+  const updateSelectedPreset = (patch) => {
+    updateFrameCamera({
+      presets: {
+        ...frameCamera.presets,
+        [selectedCameraMode]: { ...selectedCameraPreset, ...patch },
+      },
+    })
+  }
+  const updateSelectedVector = (key, index, value) => {
+    if (!Number.isFinite(value)) return
+    const next = [...(selectedCameraPreset[key] ?? [0, 0, 0])]
+    next[index] = value
+    updateSelectedPreset({ [key]: next })
+  }
 
   return (
     <div className='az-panel-right'>
@@ -282,7 +315,11 @@ export default function EditorSettingsPanel({
             <input
               type='checkbox'
               checked={animation.autoRotate ?? false}
-              onChange={(e) => onChange('animation', { ...animation, autoRotate: e.target.checked })}
+              onChange={(e) => {
+                const autoRotate = e.target.checked
+                onChange('animation', { ...animation, autoRotate })
+                if (autoRotate) updateFrameCamera({ selectedMode: 'auto' })
+              }}
             />
           </label>
           <SliderRow
@@ -362,6 +399,73 @@ export default function EditorSettingsPanel({
             value={stage.radialFloorOpacity ?? 0.42}
             min={0} max={1} step={0.02}
             onChange={(v) => onChange('stage', { ...stage, radialFloorOpacity: v })}
+          />
+        </div>
+      )}
+
+      <SectionHeader
+        title='Camera'
+        icon={Camera}
+        expanded={expandedSection === 'camera'}
+        onClick={() => toggle('camera')}
+      />
+      {expandedSection === 'camera' && (
+        <div className='az-settings-body'>
+          <CameraMiniPreview mode={selectedCameraMode} preset={selectedCameraPreset} />
+          <div className='az-camera-mode-grid'>
+            {FRAME_CAMERA_MODES.map((mode) => (
+              <button
+                key={mode.id}
+                type='button'
+                className={`az-camera-mode ${selectedCameraMode === mode.id ? 'az-camera-mode--active' : ''}`}
+                onClick={() => {
+                  updateFrameCamera({ selectedMode: mode.id })
+                  if (mode.id !== 'auto') {
+                    onChange('animation', { ...animation, autoRotate: false })
+                  } else {
+                    onChange('animation', { ...animation, autoRotate: true })
+                  }
+                }}
+              >
+                {mode.label}
+              </button>
+            ))}
+          </div>
+          <SliderRow
+            label='FOV'
+            value={camera.fov ?? 40}
+            min={25} max={70} step={1}
+            onChange={(v) => onChange('camera', { ...camera, fov: v, frame: frameCamera })}
+          />
+          <SliderRow
+            label='Distance'
+            value={selectedCameraPreset.distanceScale ?? 1}
+            min={0.45} max={2.2} step={0.05}
+            onChange={(v) => updateSelectedPreset({ distanceScale: v })}
+          />
+          <SliderRow
+            label='Mobile Distance'
+            value={frameCamera.mobileDistanceMultiplier ?? 1.4}
+            min={1} max={2.2} step={0.05}
+            onChange={(v) => updateFrameCamera({ mobileDistanceMultiplier: v })}
+          />
+          <div className='az-part-control-label'>Camera Offset</div>
+          <div className='az-part-control-grid az-part-control-grid--triple'>
+            <NumberInput label='X' value={selectedCameraPreset.offset?.[0] ?? 0} step={0.05} onChange={(v) => updateSelectedVector('offset', 0, v)} />
+            <NumberInput label='Y' value={selectedCameraPreset.offset?.[1] ?? 0} step={0.05} onChange={(v) => updateSelectedVector('offset', 1, v)} />
+            <NumberInput label='Z' value={selectedCameraPreset.offset?.[2] ?? 0} step={0.05} onChange={(v) => updateSelectedVector('offset', 2, v)} />
+          </div>
+          <div className='az-part-control-label'>Look Target Offset</div>
+          <div className='az-part-control-grid az-part-control-grid--triple'>
+            <NumberInput label='X' value={selectedCameraPreset.targetOffset?.[0] ?? 0} step={0.05} onChange={(v) => updateSelectedVector('targetOffset', 0, v)} />
+            <NumberInput label='Y' value={selectedCameraPreset.targetOffset?.[1] ?? 0} step={0.05} onChange={(v) => updateSelectedVector('targetOffset', 1, v)} />
+            <NumberInput label='Z' value={selectedCameraPreset.targetOffset?.[2] ?? 0} step={0.05} onChange={(v) => updateSelectedVector('targetOffset', 2, v)} />
+          </div>
+          <SliderRow
+            label='Auto Rotate Speed'
+            value={animation.rotateSpeed ?? 0.35}
+            min={0} max={2} step={0.05}
+            onChange={(v) => onChange('animation', { ...animation, rotateSpeed: v, autoRotate: selectedCameraMode === 'auto' })}
           />
         </div>
       )}
@@ -519,6 +623,41 @@ function ProgressBar({ value, className = '' }) {
     <div className={`az-progress-bar ${className}`}>
       <span style={{ width: `${clampPercent(value)}%` }} />
     </div>
+  )
+}
+
+function CameraMiniPreview({ mode, preset }) {
+  const x = Math.max(-1, Math.min(1, (preset.offset?.[0] ?? 0) / 4))
+  const z = Math.max(-1, Math.min(1, (preset.offset?.[2] ?? 0) / 4))
+  const left = 50 + x * 34
+  const top = mode === 'top' ? 18 : 50 - z * 26
+
+  return (
+    <div className='az-camera-mini' aria-hidden='true'>
+      <div className='az-camera-mini-car'>
+        <span>FRONT</span>
+      </div>
+      <div className='az-camera-mini-target' />
+      <div
+        className='az-camera-mini-cam'
+        style={{ left: `${left}%`, top: `${top}%` }}
+      />
+      <div className='az-camera-mini-label'>{mode}</div>
+    </div>
+  )
+}
+
+function NumberInput({ label, value, step = 0.1, onChange }) {
+  return (
+    <label className='az-part-field'>
+      <span>{label}</span>
+      <input
+        type='number'
+        value={Number.isFinite(value) ? Number(value.toFixed(2)).toString() : '0'}
+        step={step}
+        onChange={(e) => onChange(parseFloat(e.target.value))}
+      />
+    </label>
   )
 }
 

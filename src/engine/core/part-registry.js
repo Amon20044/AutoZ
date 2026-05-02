@@ -258,6 +258,7 @@ export function createPartEntry(config, meshIndex, detection = {}, targetIndex =
     interactions: config.interactions || [interaction],
     material: config.material || null,
     visibleInUI: config.visibleInUI ?? true,
+    animationEnabled: config.animationEnabled ?? true,
 
     detection: { score: detection.score ?? 1.0, method: detection.method ?? 'manual' },
 
@@ -303,11 +304,12 @@ export class PartRegistry {
 
   get all() { return [...this._parts.values()] }
   get interactive() { return this.all.filter((p) => p.visibleInUI) }
-  get lights() { return this.getByCategory('light') }
+  get enabledInteractive() { return this.interactive.filter((p) => p.animationEnabled !== false) }
+  get lights() { return this.getByCategory('light').filter((p) => p.animationEnabled !== false) }
   get headLights() { return this.lights.filter((p) => p.typeKey?.includes('light.head')) }
-  get wheelSpinParts() { return this.getByCategories(['wheel', 'rim']) }
+  get wheelSpinParts() { return this.getByCategories(['wheel', 'rim']).filter((p) => p.animationEnabled !== false) }
   get frameInteractive() {
-    return this.interactive.filter((p) => !['light', 'wheel', 'rim'].includes(p.category))
+    return this.enabledInteractive.filter((p) => !['light', 'wheel', 'rim'].includes(p.category))
   }
 
   clear() {
@@ -338,6 +340,7 @@ export class PartRegistry {
       defaultState: p.defaultState,
       interactions: p.interactions,
       visibleInUI: p.visibleInUI,
+      animationEnabled: p.animationEnabled,
       material: p.material,
     }))
   }
@@ -371,5 +374,6 @@ export class PartRegistry {
  * @property {string[]} interactions
  * @property {object|null} material
  * @property {boolean} visibleInUI
+ * @property {boolean} animationEnabled
  * @property {{ score: number, method: string }} detection
  */

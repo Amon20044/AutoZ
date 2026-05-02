@@ -59,7 +59,7 @@ export default function CarModel({
     if (!target?.isMesh) return
 
     // Find which part owns this mesh
-    for (const part of registry.interactive) {
+    for (const part of registry.enabledInteractive ?? registry.interactive) {
       const owns = part.meshObjects.some((m) => m === target || m.uuid === target.uuid)
       if (owns) {
         onPartClick?.(part)

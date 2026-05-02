@@ -177,6 +177,7 @@ export class InteractionEngine {
   }
 
   _applyCommand(part, cmd) {
+    if (part.animationEnabled === false) return
     if (cmd.type === 'setState') {
       part.targetState = cmd.payload
     } else if (cmd.type === 'toggle') {
@@ -215,6 +216,7 @@ export class InteractionEngine {
   }
 
   _updatePart(part, dt, time) {
+    if (part.animationEnabled === false) return
     const interaction = part.interactions[0]
     this._ensureOriginalTransforms(part)
 
