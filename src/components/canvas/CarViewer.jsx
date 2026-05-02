@@ -110,10 +110,10 @@ export default function CarViewer({
           dampingFactor={0.1}
           minPolarAngle={0.3}
           maxPolarAngle={Math.PI / 2 - 0.05}
-          minDistance={2}
+          minDistance={0.05}
           maxDistance={12}
-          enablePan
-          panSpeed={0.5}
+          enablePan={false}
+          touches={{ ONE: THREE.TOUCH.ROTATE, TWO: THREE.TOUCH.DOLLY_ROTATE }}
           target={orbitTarget}
           autoRotate={(animation.autoRotate ?? false) && (sceneConfig.camera?.frame?.selectedMode ?? 'auto') === 'auto'}
           autoRotateSpeed={animation.rotateSpeed ?? 0.35}
@@ -125,6 +125,7 @@ export default function CarViewer({
           frameInfo={frameInfo}
           fallbackTarget={orbitTarget}
           cameraConfig={cam}
+          rotateSpeed={animation.rotateSpeed ?? 0.35}
         />
 
         <AdaptiveDpr />
@@ -179,12 +180,15 @@ export default function CarViewer({
 }
 
 function EditorCameraRig({
-  mode, controlsRef, frameInfo, fallbackTarget, cameraConfig,
+  mode, controlsRef, frameInfo, fallbackTarget, cameraConfig, rotateSpeed = 0.35,
 }) {
   const { camera, size } = useThree()
   const desired = useRef({
     position: new THREE.Vector3(...(cameraConfig?.position ?? [5, 3, -7])),
     target: new THREE.Vector3(...fallbackTarget),
+    minDistance: 0.05,
+    maxDistance: 12,
+    autoRotateSpeed: 0.35,
   })
   const settleUntil = useRef(0)
 
@@ -199,6 +203,9 @@ function EditorCameraRig({
     })
     desired.current.position.fromArray(preset.position)
     desired.current.target.fromArray(preset.target)
+    desired.current.minDistance = preset.minDistance
+    desired.current.maxDistance = preset.maxDistance
+    desired.current.autoRotateSpeed = rotateSpeed
     settleUntil.current = performance.now() + 700
 
     const controls = controlsRef.current
@@ -206,8 +213,11 @@ function EditorCameraRig({
       controls.minDistance = preset.minDistance
       controls.maxDistance = preset.maxDistance
       controls.autoRotate = mode === 'auto'
+      controls.enablePan = false
+      controls.enableDamping = true
+      controls.dampingFactor = 0.08
     }
-  }, [cameraConfig?.fov, cameraConfig?.frame, controlsRef, fallbackTarget, frameInfo, mode, size.height, size.width])
+  }, [cameraConfig?.fov, cameraConfig?.frame, controlsRef, fallbackTarget, frameInfo, mode, rotateSpeed, size.height, size.width])
 
   useFrame((_, rawDt) => {
     const controls = controlsRef.current
@@ -216,13 +226,28 @@ function EditorCameraRig({
 
     if (controls) {
       controls.autoRotate = mode === 'auto'
-      if (mode !== 'auto' || settling) {
+      controls.enablePan = false
+      controls.minDistance = desired.current.minDistance
+      controls.maxDistance = desired.current.maxDistance
+      if (mode === 'auto') {
+        const distance = camera.position.distanceTo(controls.target)
+        const comfortableDistance = Math.max((frameInfo?.radius ?? 4) * 1.25, 1)
+        const speedScale = THREE.MathUtils.clamp(distance / comfortableDistance, 0.18, 1)
+        controls.autoRotateSpeed = rotateSpeed * speedScale
+      }
+      if (settling) {
         dampVec3(controls.target, desired.current.target, 16, dt)
       }
     }
-    if (mode !== 'auto' || settling) {
+    if (settling) {
       dampVec3(camera.position, desired.current.position, 16, dt)
     }
+
+    const focus = controls?.target ?? desired.current.target
+    const radius = Math.max(frameInfo?.radius ?? 4, 1)
+    camera.near = 0.005
+    camera.far = Math.max(80, camera.position.distanceTo(focus) + radius * 8)
+    camera.updateProjectionMatrix()
   })
 
   return null

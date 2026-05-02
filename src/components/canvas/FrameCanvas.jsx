@@ -112,7 +112,7 @@ export default function FrameCanvas({ snapshot }) {
           dampingFactor={0.1}
           minPolarAngle={0.3}
           maxPolarAngle={Math.PI / 2 - 0.05}
-          minDistance={2}
+          minDistance={0.05}
           maxDistance={12}
           enablePan={false}
           touches={{ ONE: THREE.TOUCH.ROTATE, TWO: THREE.TOUCH.DOLLY_ROTATE }}
@@ -128,6 +128,7 @@ export default function FrameCanvas({ snapshot }) {
           fallbackTarget={orbitTarget}
           snapshot={snapshot}
           cameraSettings={snapshot.camera?.frame}
+          rotateSpeed={snapshot.animation?.rotateSpeed ?? 0.35}
         />
 
         <AdaptiveDpr />
@@ -289,7 +290,7 @@ function getFrameAssetManifest(snapshot) {
 }
 
 function FrameCameraRig({
-  mode, controlsRef, frameInfo, fallbackTarget, snapshot, cameraSettings,
+  mode, controlsRef, frameInfo, fallbackTarget, snapshot, cameraSettings, rotateSpeed = 0.35,
 }) {
   const { camera, size } = useThree()
   const desired = useRef({
@@ -325,11 +326,13 @@ function FrameCameraRig({
       controls.maxDistance = preset.maxDistance
       controls.autoRotate = mode === 'auto'
       controls.enablePan = false
+      controls.enableDamping = true
+      controls.dampingFactor = 0.08
     }
 
     autoSettleUntil.current = performance.now() + (previousMode.current === mode ? 500 : 650)
     previousMode.current = mode
-  }, [cameraSettings, controlsRef, fallbackTarget, frameInfo, mode, size.height, size.width, snapshot.camera?.fov])
+  }, [cameraSettings, controlsRef, fallbackTarget, frameInfo, mode, rotateSpeed, size.height, size.width, snapshot.camera?.fov])
 
   useFrame((_, rawDt) => {
     const dt = stableDelta(rawDt)
@@ -340,24 +343,30 @@ function FrameCameraRig({
     const smoothness = mode === 'cockpit' ? 18 : 16
 
     if (controls) {
-      if (mode !== 'auto' || isSettling) {
-        dampVec3(controls.target, target, 18, dt)
-      }
       controls.minDistance = desired.current.minDistance
       controls.maxDistance = desired.current.maxDistance
+      controls.enablePan = false
       controls.autoRotate = mode === 'auto'
-    }
-
-    if (mode !== 'auto' || isSettling) {
-      dampVec3(camera.position, position, smoothness, dt)
+      if (mode === 'auto') {
+        const distance = camera.position.distanceTo(controls.target)
+        const comfortableDistance = Math.max((frameInfo?.radius ?? 4) * 1.25, 1)
+        const speedScale = THREE.MathUtils.clamp(distance / comfortableDistance, 0.18, 1)
+        controls.autoRotateSpeed = rotateSpeed * speedScale
+      }
+      if (isSettling) {
+        dampVec3(controls.target, target, 18, dt)
+      }
     }
 
     if (isSettling) {
-      const radius = Math.max(frameInfo?.radius ?? 4, 1)
-      camera.near = Math.max(0.01, camera.position.distanceTo(target) - radius * 2.25)
-      camera.far = Math.max(80, camera.position.distanceTo(target) + radius * 6)
-      camera.updateProjectionMatrix()
+      dampVec3(camera.position, position, smoothness, dt)
     }
+
+    const focus = controls?.target ?? target
+    const radius = Math.max(frameInfo?.radius ?? 4, 1)
+    camera.near = 0.005
+    camera.far = Math.max(80, camera.position.distanceTo(focus) + radius * 8)
+    camera.updateProjectionMatrix()
   })
 
   return null

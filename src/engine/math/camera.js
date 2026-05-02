@@ -117,9 +117,7 @@ export function computeFrameCameraPreset({
   const mobileMultiplier = finiteNumber(cameraSettings?.mobileDistanceMultiplier, DEFAULT_FRAME_CAMERA_SETTINGS.mobileDistanceMultiplier)
   const distanceScale = Math.max(0.35, finiteNumber(settings.distanceScale, 1))
   const baseDistance = fitDistanceFromSize(size, fovDeg, aspect, 0.6) * (isMobile ? mobileMultiplier : 1) * distanceScale
-  const target = center.clone()
-  target.y = Math.max(center.y, height * 0.48)
-  target.add(targetOffset)
+  const target = center.clone().add(targetOffset)
 
   const dirs = {
     auto: new THREE.Vector3(0.78, 0.38, 1),
@@ -131,16 +129,13 @@ export function computeFrameCameraPreset({
   }
 
   if (mode === 'cockpit') {
-    const cockpitTarget = center.clone()
-    cockpitTarget.y = Math.max(height * 0.58, 0.65)
-    cockpitTarget.z = center.z + depth * 0.04
-    cockpitTarget.add(targetOffset)
+    const cockpitTarget = center.clone().add(targetOffset)
 
     const cockpitPosition = cockpitTarget.clone().add(new THREE.Vector3(0.16 * size.x, 0.04 * height, Math.max(depth * 0.32, 1.05))).add(offset)
     return {
       position: cockpitPosition.toArray(),
       target: cockpitTarget.toArray(),
-      minDistance: Math.max(depth * 0.12, 0.45),
+      minDistance: 0.05,
       maxDistance: Math.max(baseDistance * 0.85, 2.4),
       autoRotate: false,
     }
@@ -153,7 +148,7 @@ export function computeFrameCameraPreset({
   return {
     position: position.toArray(),
     target: target.toArray(),
-    minDistance: Math.max(baseDistance * 0.36, 1.6),
+    minDistance: 0.05,
     maxDistance: Math.max(baseDistance * 1.65, 8),
     autoRotate: mode === 'auto',
   }
