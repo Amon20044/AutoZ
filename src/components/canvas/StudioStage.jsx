@@ -43,14 +43,35 @@ function SceneAtmosphere({ environment, stage, fog }) {
   return null
 }
 
+function ShadowCatcher({ scale = 11, opacity = 0.24, color = '#111827' }) {
+  return (
+    <mesh
+      position={[0, -0.006, 0]}
+      rotation={[-Math.PI / 2, 0, 0]}
+      receiveShadow
+      renderOrder={-45}
+      frustumCulled={false}
+    >
+      <planeGeometry args={[scale, scale]} />
+      <shadowMaterial
+        transparent
+        opacity={opacity}
+        color={color}
+        depthWrite={false}
+      />
+    </mesh>
+  )
+}
+
 export default function StudioStage({ environment = {}, stage = {}, fog = {} }) {
   const shadowOptions = useMemo(() => ({
-    opacity: stage.shadowOpacity ?? 0.34,
-    blur: stage.shadowBlur ?? 2.8,
-    far: stage.shadowFar ?? 7.5,
+    opacity: stage.shadowOpacity ?? 0.52,
+    blur: stage.shadowBlur ?? 2.2,
+    far: stage.shadowFar ?? 8.5,
     scale: stage.shadowScale ?? 11,
     resolution: stage.shadowResolution ?? 1024,
-    color: stage.shadowColor ?? '#475569',
+    color: stage.shadowColor ?? '#1f2937',
+    catcherOpacity: stage.shadowCatcherOpacity ?? 0.24,
     frames: stage.liveShadows ? Infinity : 1,
   }), [stage])
 
@@ -83,8 +104,13 @@ export default function StudioStage({ environment = {}, stage = {}, fog = {} }) 
 
       {showShadows && (
         <>
+          <ShadowCatcher
+            scale={shadowOptions.scale}
+            opacity={shadowOptions.catcherOpacity}
+            color={shadowOptions.color}
+          />
           <ContactShadows
-            position={[0, 0.002, 0]}
+            position={[0, 0.004, 0]}
             opacity={shadowOptions.opacity}
             blur={shadowOptions.blur}
             far={shadowOptions.far}

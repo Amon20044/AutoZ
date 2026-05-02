@@ -71,7 +71,7 @@ export default function EditorSettingsPanel({
   const env = config.environment ?? { preset: 'studio', background: false, backgroundColor: '#f7f7f4' }
   const lighting = config.lighting ?? { ambient: { enabled: true, intensity: 0.35 }, lights: [] }
   const fog = config.fog ?? { enabled: false, color: '#f7f7f4', near: 8, far: 34 }
-  const stage = config.stage ?? { backgroundColor: '#f7f7f4', shadows: true, shadowOpacity: 0.34, shadowBlur: 2.8, environmentIntensity: 1.18 }
+  const stage = config.stage ?? { backgroundColor: '#f7f7f4', shadows: true, shadowOpacity: 0.52, shadowCatcherOpacity: 0.24, shadowBlur: 2.2, environmentIntensity: 1.18 }
   const animation = config.animation ?? { autoRotate: false, rotateSpeed: 0.35 }
   const camera = config.camera ?? { fov: 40, frame: DEFAULT_FRAME_CAMERA_SETTINGS }
   const frameCamera = {
@@ -367,13 +367,19 @@ export default function EditorSettingsPanel({
           />
           <SliderRow
             label='Shadow Opacity'
-            value={stage.shadowOpacity ?? 0.34}
-            min={0} max={0.8} step={0.02}
+            value={stage.shadowOpacity ?? 0.52}
+            min={0} max={1} step={0.02}
             onChange={(v) => onChange('stage', { ...stage, shadowOpacity: v })}
           />
           <SliderRow
+            label='Ground Shadow'
+            value={stage.shadowCatcherOpacity ?? 0.24}
+            min={0} max={0.7} step={0.02}
+            onChange={(v) => onChange('stage', { ...stage, shadowCatcherOpacity: v })}
+          />
+          <SliderRow
             label='Shadow Softness'
-            value={stage.shadowBlur ?? 2.8}
+            value={stage.shadowBlur ?? 2.2}
             min={0.5} max={6} step={0.1}
             onChange={(v) => onChange('stage', { ...stage, shadowBlur: v })}
           />
