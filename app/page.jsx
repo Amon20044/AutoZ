@@ -120,7 +120,7 @@ export default function LandingPage() {
             style={{
               width: '100%',
               height: '100%',
-              minHeight: '500px',
+              minHeight: '800px',
               border: 'none',
               borderRadius: '12px',
               boxShadow: '0 20px 60px rgba(0, 0, 0, 0.3)'
