@@ -115,36 +115,20 @@ export default function LandingPage() {
           </div>
         </div>
         <div className='lhero-right'>
-          <div className='viewer-mock'>
-            <div className='viewer-top'>
-              <div className='vdot on' /><div className='vdot' /><div className='vdot' />
-              <span className='vtitle'>autoz.app/view/sedan-red-studio-82fa</span>
-            </div>
-            <div className='viewer-body'>
-              <div className='scanline' />
-              <div style={{ width: '85%', position: 'relative' }}>
-                <svg viewBox='0 0 520 200' fill='none' xmlns='http://www.w3.org/2000/svg' style={{ width: '100%', display: 'block' }}>
-                  <path d='M60 130 L60 110 L120 65 L220 48 L320 50 L400 68 L440 90 L460 110 L460 130 Z' fill='rgba(200,169,110,0.06)' stroke='rgba(200,169,110,0.25)' strokeWidth='1' />
-                  <path d='M130 108 L160 70 L220 54 L310 54 L370 70 L390 108 Z' fill='rgba(200,169,110,0.04)' stroke='rgba(200,169,110,0.15)' strokeWidth='1' />
-                  <path d='M155 104 L178 70 L240 58 L240 104 Z' fill='rgba(120,160,190,0.08)' stroke='rgba(120,160,190,0.2)' strokeWidth='0.8' />
-                  <path d='M295 104 L295 58 L355 68 L372 104 Z' fill='rgba(120,160,190,0.08)' stroke='rgba(120,160,190,0.2)' strokeWidth='0.8' />
-                  <circle cx='145' cy='136' r='26' fill='rgba(10,10,10,0.9)' stroke='rgba(200,169,110,0.2)' strokeWidth='1' />
-                  <circle cx='145' cy='136' r='16' fill='none' stroke='rgba(200,169,110,0.35)' strokeWidth='1.5' />
-                  <circle cx='145' cy='136' r='5' fill='rgba(200,169,110,0.3)' />
-                  <circle cx='375' cy='136' r='26' fill='rgba(10,10,10,0.9)' stroke='rgba(200,169,110,0.2)' strokeWidth='1' />
-                  <circle cx='375' cy='136' r='16' fill='none' stroke='rgba(200,169,110,0.35)' strokeWidth='1.5' />
-                  <circle cx='375' cy='136' r='5' fill='rgba(200,169,110,0.3)' />
-                  <line x1='40' y1='162' x2='480' y2='162' stroke='rgba(200,169,110,0.1)' strokeWidth='1' />
-                  <rect x='64' y='106' width='10' height='16' rx='1' fill='rgba(220,60,40,0.5)' />
-                </svg>
-              </div>
-              <div style={{ position: 'absolute', top: '30%', right: '14%' }}>
-                {['Open', 'Color', 'Light'].map((t, i) => (
-                  <div key={t} className='rbtn' style={{ position: 'absolute', top: `${-40 + i * 34}px`, left: `${10 + (i === 1 ? 32 : 0)}px`, animationDelay: `${i * 0.3}s` }}>{t}</div>
-                ))}
-              </div>
-            </div>
-          </div>
+          <iframe 
+            src='https://auto-z-omega.vercel.app/editor/az-20aa774ed5'
+            style={{
+              width: '100%',
+              height: '100%',
+              minHeight: '500px',
+              border: 'none',
+              borderRadius: '12px',
+              boxShadow: '0 20px 60px rgba(0, 0, 0, 0.3)'
+            }}
+            allow='accelerometer; ambient-light-sensor; camera; encrypted-media; geolocation; gyroscope; magnetometer; microphone; payment; usb; xr-spatial-tracking'
+            allowFullScreen
+            title='AutoZ Car Viewer'
+          />
         </div>
       </section>
 
