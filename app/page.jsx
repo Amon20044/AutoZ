@@ -116,7 +116,7 @@ export default function LandingPage() {
         </div>
         <div className='lhero-right'>
           <iframe
-            src='https://auto-z-omega.vercel.app/editor/az-20aa774ed5'
+            src='https://auto-z-omega.vercel.app/frame/az-20aa774ed5'
             style={{
               width: '100%',
               height: '100%',
