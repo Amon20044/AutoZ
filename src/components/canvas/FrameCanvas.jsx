@@ -10,6 +10,7 @@ import { Disc3, Eye, EyeOff, Lightbulb } from 'lucide-react'
 import PostProcessing, { RendererSettings } from './PostProcessing'
 import PartButtons from './PartButtons'
 import StudioStage from './StudioStage'
+import ImperativeMeshPicker from './ImperativeMeshPicker'
 import { useAutoZEngine } from '@/engine/hooks/useAutoZEngine'
 import {
   createModelObjectUrl,
@@ -125,6 +126,18 @@ export default function FrameCanvas({ snapshot }) {
             />
           )}
         </Suspense>
+
+        <ImperativeMeshPicker
+          enabled={Boolean(runtime.engine && runtime.registry)}
+          getRoots={() => [runtime.engine?._modelRoot].filter(Boolean)}
+          onMesh={(mesh) => {
+            const engine = runtime.engine
+            if (!engine) return false
+            // engine.onMeshClick toggles matching part
+            const part = engine.onMeshClick(mesh)
+            return Boolean(part)
+          }}
+        />
 
         {post.enabled !== false && <PostProcessing config={post} />}
       </Canvas>

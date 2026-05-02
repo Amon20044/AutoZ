@@ -9,6 +9,7 @@ import StudioStage from './StudioStage'
 import CarModel from './CarModel'
 import PartButtons from './PartButtons'
 import PostProcessing, { RendererSettings } from './PostProcessing'
+import ImperativeMeshPicker from './ImperativeMeshPicker'
 import { installThreeConsoleFilter } from '@/lib/three/console-filter'
 import { orbitTargetFromImport } from '@/lib/scene/orbit-target'
 
@@ -39,6 +40,21 @@ export default function CarViewer({
   const backgroundColor = stage.backgroundColor ?? env.backgroundColor ?? '#f7f7f4'
   const reflectionIntensity = stage.environmentIntensity ?? 1.18
   const orbitTarget = useMemo(() => orbitTargetFromImport(sceneConfig.import, [0, 0.8, 0]), [sceneConfig.import])
+  const handlePickedMesh = useMemo(() => (mesh) => {
+    if (!registry) return false
+    let target = mesh
+    while (target && !target.isMesh) target = target.parent
+    if (!target?.isMesh) return false
+
+    for (const part of registry.interactive ?? []) {
+      const owns = part.meshObjects?.some((m) => m === target || m?.uuid === target.uuid)
+      if (owns) {
+        onPartClick?.(part)
+        return true
+      }
+    }
+    return false
+  }, [onPartClick, registry])
 
   return (
     <div className='az-viewport'>
@@ -86,6 +102,11 @@ export default function CarViewer({
 
           {normalizedRoot && (
             <>
+              <ImperativeMeshPicker
+                enabled
+                getRoots={() => [normalizedRoot]}
+                onMesh={handlePickedMesh}
+              />
               <CarModel
                 normalizedRoot={normalizedRoot}
                 registry={registry}
