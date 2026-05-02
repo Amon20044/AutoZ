@@ -84,7 +84,7 @@ export default function LandingPage() {
         <div className='landing-nav-links'>
           <a href='#workflow'>Workflow</a>
           <a href='#pricing'>Pricing</a>
-          <a href='#guide'>Artist guide</a>
+          <Link href='/taxonomy/docs/vehicles'>Artist guide</Link>
           <Link href='/editor'>Open Editor</Link>
         </div>
       </nav>
