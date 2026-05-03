@@ -211,9 +211,23 @@ async function writeCachedChunk(url, blob, contentType) {
 const CHUNK_FETCH_MAX_RETRIES = 3
 const CHUNK_FETCH_RETRY_BASE_MS = 500
 
+function chunkFetchError(fileName, status) {
+  const msg = status != null
+    ? `Could not load model chunk ${fileName}. (HTTP ${status})`
+    : `Could not load model chunk ${fileName}.`
+  const err = new Error(msg)
+  // Permanent 4xx errors (excluding 429 Too Many Requests) should not be retried
+  err.retryable = status == null || status >= 500 || status === 429
+  return err
+}
+
 async function fetchChunk(url, contentType) {
   const cached = await fetchCachedChunk(url, contentType)
   if (cached) return { blob: cached, cached: true }
+
+  const fileName = (() => {
+    try { return new URL(url).pathname.split('/').pop() || url } catch { return url }
+  })()
 
   let lastError
   for (let attempt = 0; attempt <= CHUNK_FETCH_MAX_RETRIES; attempt++) {
@@ -232,13 +246,11 @@ async function fetchChunk(url, contentType) {
         return { blob, cached: false }
       }
 
-      const err = new Error(`Could not load model chunk ${url}. (HTTP ${res.status})`)
-      // Do not retry permanent client errors (4xx except 429 Too Many Requests)
-      if (res.status >= 400 && res.status < 500 && res.status !== 429) throw err
+      const err = chunkFetchError(fileName, res.status)
+      if (!err.retryable) throw err
       lastError = err
     } catch (err) {
-      // Re-throw permanent errors immediately
-      if (err.message.includes('(HTTP 4') && !err.message.includes('(HTTP 429)')) throw err
+      if (err.retryable === false) throw err
       lastError = err
     }
   }
