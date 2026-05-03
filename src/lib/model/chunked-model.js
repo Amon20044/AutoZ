@@ -208,16 +208,42 @@ async function writeCachedChunk(url, blob, contentType) {
   }
 }
 
+const CHUNK_FETCH_MAX_RETRIES = 3
+const CHUNK_FETCH_RETRY_BASE_MS = 500
+
 async function fetchChunk(url, contentType) {
   const cached = await fetchCachedChunk(url, contentType)
   if (cached) return { blob: cached, cached: true }
 
-  const res = await fetch(url, { cache: 'no-store' })
-  if (!res.ok) throw new Error(`Could not load model chunk ${url}.`)
+  let lastError
+  for (let attempt = 0; attempt <= CHUNK_FETCH_MAX_RETRIES; attempt++) {
+    if (attempt > 0) {
+      await new Promise((resolve) =>
+        setTimeout(resolve, CHUNK_FETCH_RETRY_BASE_MS * Math.pow(2, attempt - 1)),
+      )
+    }
 
-  const blob = await res.blob()
-  await writeCachedChunk(url, blob, contentType)
-  return { blob, cached: false }
+    try {
+      const res = await fetch(url, { cache: 'no-store' })
+
+      if (res.ok) {
+        const blob = await res.blob()
+        await writeCachedChunk(url, blob, contentType)
+        return { blob, cached: false }
+      }
+
+      const err = new Error(`Could not load model chunk ${url}. (HTTP ${res.status})`)
+      // Do not retry permanent client errors (4xx except 429 Too Many Requests)
+      if (res.status >= 400 && res.status < 500 && res.status !== 429) throw err
+      lastError = err
+    } catch (err) {
+      // Re-throw permanent errors immediately
+      if (err.message.includes('(HTTP 4') && !err.message.includes('(HTTP 429)')) throw err
+      lastError = err
+    }
+  }
+
+  throw lastError
 }
 
 export async function fetchChunkedModelBlob(model, options = {}) {
