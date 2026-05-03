@@ -234,7 +234,7 @@ async function fetchChunk(url, contentType) {
     }
   })()
 
-  let lastError = chunkFetchError(fileName, null)
+  let lastError = null
   for (let attempt = 0; attempt <= CHUNK_FETCH_MAX_RETRIES; attempt++) {
     if (attempt > 0) {
       await new Promise((resolve) =>
@@ -256,11 +256,12 @@ async function fetchChunk(url, contentType) {
       lastError = err
     } catch (err) {
       if (err.retryable === false) throw err
-      lastError = err
+      // Wrap network-level errors (no retryable flag) with consistent context
+      lastError = err.retryable === undefined ? chunkFetchError(fileName, null) : err
     }
   }
 
-  throw lastError
+  throw lastError ?? chunkFetchError(fileName, null)
 }
 
 export async function fetchChunkedModelBlob(model, options = {}) {
