@@ -226,10 +226,15 @@ async function fetchChunk(url, contentType) {
   if (cached) return { blob: cached, cached: true }
 
   const fileName = (() => {
-    try { return new URL(url).pathname.split('/').pop() || url } catch { return url }
+    try {
+      const parsed = new URL(url)
+      return parsed.pathname.split('/').pop() || 'chunk'
+    } catch {
+      return 'chunk'
+    }
   })()
 
-  let lastError
+  let lastError = chunkFetchError(fileName, null)
   for (let attempt = 0; attempt <= CHUNK_FETCH_MAX_RETRIES; attempt++) {
     if (attempt > 0) {
       await new Promise((resolve) =>
