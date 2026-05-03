@@ -1,9 +1,9 @@
 const CHUNK_CACHE_NAME = 'autoz-chunked-model-v1'
 const CHUNK_CACHE_META_PREFIX = 'autoz:chunk-cache:'
 const CHUNK_CACHE_TTL_MS = 5 * 60 * 1000
-const CHUNK_FETCH_CONCURRENCY = 4
-/** First GLB/glTF bytes must load in ascending part order — header + chunk table live at the front. */
-const SEQUENTIAL_PREFIX_CHUNKS = 3
+const CHUNK_FETCH_CONCURRENCY = 6
+// Chunks are reassembled by index, so network fetches can run concurrently.
+const SEQUENTIAL_PREFIX_CHUNKS = 0
 
 export function normalizeStorageUrl(url) {
   if (!url || typeof url !== 'string') return url

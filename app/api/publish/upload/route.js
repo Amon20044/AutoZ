@@ -4,8 +4,9 @@
  * Chunked model upload proxy for large GLB files.
  *
  * The browser sends one Vercel-safe 3 MB binary request per file slice. Each
- * slice is stored as a separate object under models/{slug}/{fileName}.part-000, then the browser
- * calls this route once more with mode=manifest to write models/{slug}/manifest.json.
+ * slice is stored as a separate object under models/{slug}/{uploadId}/{fileName}.part-000,
+ * then the browser calls this route once more with mode=manifest to write
+ * models/{slug}/{uploadId}/manifest.json.
  *
  * Three.js cannot load the split parts directly; the frame/editor client fetches
  * the manifest, downloads the parts, rebuilds one Blob, and loads that blob URL.
@@ -111,6 +112,7 @@ export async function POST(request) {
     const url = new URL(request.url)
     const mode = url.searchParams.get('mode') || 'part'
     const slug = url.searchParams.get('slug')
+    const uploadId = sanitizePath(url.searchParams.get('uploadId') || `upload-${Date.now()}`)
     const fileName = url.searchParams.get('fileName') || 'model.glb'
     const fileSize = parseIntegerParam(url, 'fileSize', 0)
     const contentTypeHint = url.searchParams.get('contentType') || ''
@@ -130,7 +132,7 @@ export async function POST(request) {
 
       const manifest = buildManifest({ safePath, contentType, fileSize, totalParts })
       const body = Buffer.from(JSON.stringify(manifest, null, 2), 'utf8')
-      const key = `models/${slug}/manifest.json`
+      const key = `models/${slug}/${uploadId}/manifest.json`
 
       await uploadObject({
         key,
@@ -170,7 +172,7 @@ export async function POST(request) {
     }
 
     const partName = getPartName(safePath, partIndex)
-    const key = `models/${slug}/${partName}`
+    const key = `models/${slug}/${uploadId}/${partName}`
 
     await uploadObject({
       key,

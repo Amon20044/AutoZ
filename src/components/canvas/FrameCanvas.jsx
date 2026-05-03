@@ -11,6 +11,7 @@ import PostProcessing, { RendererSettings } from './PostProcessing'
 import PartButtons from './PartButtons'
 import StudioStage from './StudioStage'
 import ImperativeMeshPicker from './ImperativeMeshPicker'
+import CockpitLookControls from './CockpitLookControls'
 import { useAutoZEngine } from '@/engine/hooks/useAutoZEngine'
 import {
   createModelObjectUrl,
@@ -51,6 +52,7 @@ export default function FrameCanvas({ snapshot }) {
   const [cameraMode, setCameraMode] = useState(snapshot.camera?.frame?.selectedMode ?? 'auto')
   const [frameInfo, setFrameInfo] = useState(null)
   const controlsRef = useRef(null)
+  const isCockpit = cameraMode === 'cockpit'
 
   const lightCount = runtime.registry?.headLights.length || runtime.registry?.lights.length || 0
   const wheelCount = runtime.registry?.wheelSpinParts.length ?? 0
@@ -117,6 +119,7 @@ export default function FrameCanvas({ snapshot }) {
           enablePan={false}
           touches={{ ONE: THREE.TOUCH.ROTATE, TWO: THREE.TOUCH.DOLLY_ROTATE }}
           target={orbitTarget}
+          enabled={!isCockpit}
           autoRotate={cameraMode === 'auto'}
           autoRotateSpeed={snapshot.animation?.rotateSpeed ?? 0.35}
         />
@@ -129,6 +132,13 @@ export default function FrameCanvas({ snapshot }) {
           snapshot={snapshot}
           cameraSettings={snapshot.camera?.frame}
           rotateSpeed={snapshot.animation?.rotateSpeed ?? 0.35}
+        />
+        <CockpitLookControls
+          enabled={isCockpit}
+          frameInfo={frameInfo}
+          fallbackTarget={orbitTarget}
+          cameraConfig={cam}
+          cameraSettings={snapshot.camera?.frame}
         />
 
         <AdaptiveDpr />
@@ -325,6 +335,7 @@ function FrameCameraRig({
     if (controls) {
       controls.minDistance = preset.minDistance
       controls.maxDistance = preset.maxDistance
+      controls.enabled = mode !== 'cockpit'
       controls.autoRotate = mode === 'auto'
       controls.enablePan = false
       controls.minPolarAngle = mode === 'cockpit' ? Math.PI / 2 : 0.3
@@ -348,6 +359,7 @@ function FrameCameraRig({
     if (controls) {
       controls.minDistance = desired.current.minDistance
       controls.maxDistance = desired.current.maxDistance
+      controls.enabled = mode !== 'cockpit'
       controls.enablePan = false
       controls.minPolarAngle = mode === 'cockpit' ? Math.PI / 2 : 0.3
       controls.maxPolarAngle = mode === 'cockpit' ? Math.PI / 2 : Math.PI / 2 - 0.05

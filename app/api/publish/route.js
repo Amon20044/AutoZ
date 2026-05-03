@@ -26,6 +26,7 @@ import {
   AbortMultipartUploadCommand,
   CompleteMultipartUploadCommand,
   CreateMultipartUploadCommand,
+  DeleteObjectsCommand,
   PutObjectCommand,
   UploadPartCommand,
 } from '@aws-sdk/client-s3'
@@ -72,6 +73,8 @@ export async function POST(request) {
     const requestedPublishId = typeof requestedPublishIdValue === 'string' ? requestedPublishIdValue : null
     const updateExistingPublish = formData.get('updateExisting') === 'true'
     const modelPathValue = formData.get('modelPath')
+    const uploadId = sanitizeStoragePath(formData.get('uploadId') || `upload-${Date.now()}`)
+    const modelOptimization = parseJsonObject(formData.get('modelOptimization'))
 
     // Pre-upload fields (set when the model was uploaded before publish finalization)
     const preUploadedModelUrl = formData.get('modelUrl')
@@ -95,7 +98,7 @@ export async function POST(request) {
     const existingPublish = updateExistingPublish && requestedPublishId
       ? await prisma.publish.findUnique({
         where: { publishSlug: normalizePublishId(requestedPublishId) || requestedPublishId },
-        select: { id: true, projectId: true, publishSlug: true, version: true },
+        select: { id: true, projectId: true, publishSlug: true, version: true, snapshot: true },
       })
       : null
     const resolvedPublish = existingPublish
@@ -123,7 +126,7 @@ export async function POST(request) {
         typeof modelPathValue === 'string' ? modelPathValue : modelFile.name || 'model.glb',
       )
       const modelBuffer = Buffer.from(await modelFile.arrayBuffer())
-      modelKey = `models/${slug}/${modelPath}`
+      modelKey = `models/${slug}/${uploadId}/${modelPath}`
       modelMimeType = getContentType(modelFile, modelPath)
 
       await uploadBufferToS3Object({
@@ -151,7 +154,7 @@ export async function POST(request) {
       if (!resourcePath) continue
 
       const resourceBuffer = Buffer.from(await resourceFile.arrayBuffer())
-      const resourceKey = `models/${slug}/${resourcePath}`
+      const resourceKey = `models/${slug}/${uploadId}/${resourcePath}`
       const resourceContentType = getContentType(resourceFile, resourcePath)
 
       await uploadBufferToS3Object({
@@ -222,6 +225,7 @@ export async function POST(request) {
         path: modelKey.split('/').slice(2).join('/') || modelFileName,
         fileSize: modelFileSize,
         contentType: modelMimeType,
+        optimization: modelOptimization,
         ...(modelChunked ? {
           chunked: true,
           manifestUrl: modelUrl,
@@ -313,7 +317,10 @@ export async function POST(request) {
         mimeType: modelMimeType,
         fileName: modelFileName,
         fileSizeBytes: BigInt(modelFileSize || 0),
-        metadata: modelChunked ? { chunked: true, manifest: modelManifest } : {},
+        metadata: {
+          ...(modelChunked ? { chunked: true, manifest: modelManifest } : {}),
+          ...(modelOptimization ? { optimization: modelOptimization } : {}),
+        },
       },
       ...(thumbnailResult ? [{
         assetType: 'thumbnail',
@@ -401,6 +408,19 @@ export async function POST(request) {
     const publicBase = process.env.NEXT_PUBLIC_BASE_URL || getBaseUrl(request)
     const absFrame = `${publicBase}/frame/${slug}`
     const absEditor = `${publicBase}/editor/${slug}`
+
+    const newStorageKeys = new Set(collectSnapshotStorageKeys(snapshot, slug))
+    const staleKeys = existingPublish
+      ? collectSnapshotStorageKeys(existingPublish.snapshot, slug)
+        .filter((key) => !newStorageKeys.has(key))
+      : []
+    if (staleKeys.length > 0) {
+      try {
+        await deleteStorageObjects(staleKeys)
+      } catch (err) {
+        console.warn('[Publish API] Failed to delete stale publish storage:', err.message)
+      }
+    }
 
     return NextResponse.json({
       success: true,
@@ -527,6 +547,58 @@ function normalizeStorageUploadError(err) {
   }
 
   return err
+}
+
+async function deleteStorageObjects(keys) {
+  const uniqueKeys = [...new Set(keys.filter(Boolean))]
+  for (let i = 0; i < uniqueKeys.length; i += 1000) {
+    const batch = uniqueKeys.slice(i, i + 1000)
+    await s3Client.send(new DeleteObjectsCommand({
+      Bucket: MODELS_BUCKET,
+      Delete: {
+        Objects: batch.map((Key) => ({ Key })),
+        Quiet: true,
+      },
+    }))
+  }
+}
+
+function collectSnapshotStorageKeys(snapshot, slug) {
+  if (!snapshot || typeof snapshot !== 'object') return []
+
+  const keys = new Set()
+  const add = (key) => {
+    if (typeof key !== 'string' || !key) return
+    keys.add(key.startsWith('models/') ? key : `models/${slug}/${key}`)
+  }
+
+  if (snapshot.model?.manifestKey) {
+    add(snapshot.model.manifestKey)
+    const base = snapshot.model.manifestKey.split('/').slice(0, -1).join('/')
+    for (const chunk of snapshot.model.manifest?.chunks ?? []) {
+      if (typeof chunk !== 'string') continue
+      if (/^https?:\/\//i.test(chunk)) {
+        try {
+          const parsed = new URL(chunk)
+          const marker = `/${MODELS_BUCKET}/`
+          const markerIndex = parsed.pathname.indexOf(marker)
+          if (markerIndex >= 0) add(decodeURIComponent(parsed.pathname.slice(markerIndex + marker.length)))
+        } catch {
+          // Ignore malformed absolute chunk URLs.
+        }
+      } else {
+        add(`${base}/${chunk}`.replace(/\/+/g, '/'))
+      }
+    }
+  } else if (snapshot.model?.path) {
+    add(snapshot.model.path)
+  }
+
+  for (const asset of snapshot.runtimeAssets ?? []) {
+    add(asset.key || asset.path)
+  }
+
+  return [...keys]
 }
 
 function isUploadedFile(value) {

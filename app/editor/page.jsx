@@ -13,6 +13,7 @@ import EditorSettingsPanel from '@/components/dom/EditorSettingsPanel'
 import { runImportPipeline } from '@/engine/pipeline/import-pipeline'
 import { InteractionEngine } from '@/engine/core/interaction-engine'
 import { fetchModelBlob, normalizeStorageUrl } from '@/lib/model/chunked-model'
+import { optimizePublishModelFile } from '@/lib/model/optimize-publish-model'
 import { DEFAULT_FRAME_CAMERA_SETTINGS } from '@/engine/math/camera'
 
 // Dynamic import for the 3D viewer (no SSR)
@@ -115,12 +116,19 @@ const isTextureFile = (file) => {
 // Large model workaround: one Vercel-safe request per 3 MB file slice,
 // followed by a small manifest.json that the frame viewer can rehydrate.
 const LARGE_MODEL_CHUNK_SIZE = 3 * 1024 * 1024
+const LARGE_MODEL_UPLOAD_CONCURRENCY = 4
 
-function uploadModelPart({ file, slug, partIndex, totalParts, start, end, onProgress }) {
+function createUploadId() {
+  const cryptoObj = typeof window !== 'undefined' ? window.crypto : null
+  return cryptoObj?.randomUUID?.() || `upload-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 9)}`
+}
+
+function uploadModelPart({ file, slug, uploadId, partIndex, totalParts, start, end, onProgress }) {
   return new Promise((resolve, reject) => {
     const chunk = file.slice(start, end)
     const params = new URLSearchParams({
       slug,
+      uploadId,
       fileName: file.name,
       fileSize: String(file.size),
       contentType: file.type || 'model/gltf-binary',
@@ -172,7 +180,7 @@ function uploadModelPart({ file, slug, partIndex, totalParts, start, end, onProg
   })
 }
 
-async function uploadChunkedModel(file, slug, onProgress) {
+async function uploadChunkedModel(file, slug, uploadId, onProgress) {
   const totalParts = Math.ceil(file.size / LARGE_MODEL_CHUNK_SIZE)
   const parts = Array.from({ length: totalParts }, (_, index) => {
     const start = index * LARGE_MODEL_CHUNK_SIZE
@@ -211,53 +219,74 @@ async function uploadChunkedModel(file, slug, onProgress) {
     })
   }
 
-  emit('preparing', { statusText: 'Preparing 3 MB upload parts' })
+  emit('preparing', { statusText: `Preparing ${totalParts} upload parts` })
 
-  for (let partIndex = 0; partIndex < totalParts; partIndex += 1) {
-    const start = partIndex * LARGE_MODEL_CHUNK_SIZE
-    const end = Math.min(start + LARGE_MODEL_CHUNK_SIZE, file.size)
-    const part = parts[partIndex]
+  let nextPartIndex = 0
+  const uploadNextPart = async () => {
+    while (nextPartIndex < totalParts) {
+      const partIndex = nextPartIndex
+      nextPartIndex += 1
 
-    part.status = 'running'
-    part.uploaded = 0
-    part.percent = 0
-    emit('uploading', {
-      currentPart: partIndex,
-      statusText: `Uploading part ${partIndex + 1} of ${totalParts}`,
-    })
+      const start = partIndex * LARGE_MODEL_CHUNK_SIZE
+      const end = Math.min(start + LARGE_MODEL_CHUNK_SIZE, file.size)
+      const part = parts[partIndex]
 
-    await uploadModelPart({
-      file,
-      slug,
-      partIndex,
-      totalParts,
-      start,
-      end,
-      onProgress: ({ loaded, total }) => {
-        part.uploaded = loaded
-        part.percent = total > 0 ? Math.round((loaded / total) * 100) : 0
+      part.status = 'running'
+      part.uploaded = 0
+      part.percent = 0
+      emit('uploading', {
+        currentPart: partIndex,
+        statusText: `Uploading ${Math.min(LARGE_MODEL_UPLOAD_CONCURRENCY, totalParts)} parts in parallel`,
+      })
+
+      try {
+        await uploadModelPart({
+          file,
+          slug,
+          uploadId,
+          partIndex,
+          totalParts,
+          start,
+          end,
+          onProgress: ({ loaded, total }) => {
+            part.uploaded = loaded
+            part.percent = total > 0 ? Math.round((loaded / total) * 100) : 0
+            emit('uploading', {
+              currentPart: partIndex,
+              statusText: `Uploading ${Math.min(LARGE_MODEL_UPLOAD_CONCURRENCY, totalParts)} parts in parallel`,
+            })
+          },
+        })
+
+        part.status = 'done'
+        part.uploaded = part.size
+        part.percent = 100
+        completedBytes += part.size
         emit('uploading', {
           currentPart: partIndex,
-          statusText: `Uploading part ${partIndex + 1} of ${totalParts}`,
+          statusText: `Uploaded part ${partIndex + 1} of ${totalParts}`,
         })
-      },
-    })
-
-    part.status = 'done'
-    part.uploaded = part.size
-    part.percent = 100
-    completedBytes += part.size
-    emit('uploading', {
-      currentPart: partIndex,
-      statusText: `Uploaded part ${partIndex + 1} of ${totalParts}`,
-    })
+      } catch (err) {
+        part.status = 'error'
+        emit('error', {
+          currentPart: partIndex,
+          statusText: err.message,
+        })
+        throw err
+      }
+    }
   }
+
+  await Promise.all(
+    Array.from({ length: Math.min(LARGE_MODEL_UPLOAD_CONCURRENCY, totalParts) }, () => uploadNextPart()),
+  )
 
   emit('manifest', { statusText: 'Writing manifest.json' })
 
   const params = new URLSearchParams({
     mode: 'manifest',
     slug,
+    uploadId,
     fileName: file.name,
     fileSize: String(file.size),
     contentType: file.type || 'model/gltf-binary',
@@ -631,14 +660,20 @@ export default function EditorPage({ initialPublishId = '' }) {
       // Step 1: Uploading model
       setPublishProgress(buildPublishProgress(1))
 
-      const modelFile = modelFileRef.current
-      const modelPath = modelEntryRef.current?.path || modelFile.name
+      const uploadId = createUploadId()
+      const sourceModelFile = modelFileRef.current
+      const optimized = await optimizePublishModelFile(sourceModelFile, {
+        onProgress: setUploadProgress,
+        options: { textureMode: 'webp', maxTextureSize: 2048 },
+      })
+      const modelFile = optimized.file
+      const modelPath = optimized.optimized ? modelFile.name : (modelEntryRef.current?.path || modelFile.name)
       const isLargeFile = modelFile.size > LARGE_MODEL_CHUNK_SIZE
 
       let modelUploadMeta = null
 
       if (isLargeFile) {
-        const uploadResult = await uploadChunkedModel(modelFile, activePublishId, setUploadProgress)
+        const uploadResult = await uploadChunkedModel(modelFile, activePublishId, uploadId, setUploadProgress)
         if (!uploadResult?.publicUrl) throw new Error('Upload proxy returned no URL.')
 
         modelUploadMeta = {
@@ -699,6 +734,8 @@ export default function EditorPage({ initialPublishId = '' }) {
       }
 
       formData.append('publishId', activePublishId)
+      formData.append('uploadId', uploadId)
+      formData.append('modelOptimization', JSON.stringify(optimized.metadata ?? {}))
       formData.append('updateExisting', isEditingExistingPublish ? 'true' : 'false')
       formData.append('name', importResult.file?.name?.replace(/\.\w+$/, '') || 'Untitled')
       formData.append('config', JSON.stringify(configPayload))

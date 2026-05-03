@@ -10,6 +10,7 @@ import CarModel from './CarModel'
 import PartButtons from './PartButtons'
 import PostProcessing, { RendererSettings } from './PostProcessing'
 import ImperativeMeshPicker from './ImperativeMeshPicker'
+import CockpitLookControls from './CockpitLookControls'
 import { installThreeConsoleFilter } from '@/lib/three/console-filter'
 import { orbitTargetFromImport } from '@/lib/scene/orbit-target'
 import { computeFrameCameraPreset } from '@/engine/math/camera'
@@ -119,6 +120,7 @@ export default function CarViewer({
           panSpeed={0.55}
           touches={{ ONE: THREE.TOUCH.ROTATE, TWO: THREE.TOUCH.DOLLY_ROTATE }}
           target={orbitTarget}
+          enabled={!isCockpit}
           autoRotate={(animation.autoRotate ?? false) && (sceneConfig.camera?.frame?.selectedMode ?? 'auto') === 'auto'}
           autoRotateSpeed={animation.rotateSpeed ?? 0.35}
         />
@@ -130,6 +132,13 @@ export default function CarViewer({
           fallbackTarget={orbitTarget}
           cameraConfig={cam}
           rotateSpeed={animation.rotateSpeed ?? 0.35}
+        />
+        <CockpitLookControls
+          enabled={isCockpit}
+          frameInfo={frameInfo}
+          fallbackTarget={orbitTarget}
+          cameraConfig={cam}
+          cameraSettings={cam.frame}
         />
 
         <AdaptiveDpr />
@@ -217,6 +226,7 @@ function EditorCameraRig({
     if (controls) {
       controls.minDistance = preset.minDistance
       controls.maxDistance = preset.maxDistance
+      controls.enabled = mode !== 'cockpit'
       controls.autoRotate = mode === 'auto'
       controls.enablePan = cameraConfig?.frame?.editorPanEnabled !== false
       controls.minPolarAngle = mode === 'cockpit' ? Math.PI / 2 : 0.3
@@ -233,6 +243,7 @@ function EditorCameraRig({
 
     if (controls) {
       controls.autoRotate = mode === 'auto'
+      controls.enabled = mode !== 'cockpit'
       controls.enablePan = cameraConfig?.frame?.editorPanEnabled !== false
       controls.minPolarAngle = mode === 'cockpit' ? Math.PI / 2 : 0.3
       controls.maxPolarAngle = mode === 'cockpit' ? Math.PI / 2 : Math.PI / 2 - 0.05
