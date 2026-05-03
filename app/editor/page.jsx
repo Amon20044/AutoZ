@@ -939,6 +939,7 @@ export default function EditorPage({ initialPublishId = '' }) {
               onPartClick={handlePartClick}
               onToggle={handleToggle}
               showPartLabels={showPartLabels}
+              activePartId={activePart}
             />
 
             {/* Processing overlay */}

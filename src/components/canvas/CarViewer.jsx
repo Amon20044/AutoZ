@@ -31,6 +31,7 @@ export default function CarViewer({
   onPartClick,
   onToggle,
   showPartLabels = true,
+  activePartId = null,
 }) {
   const parts = registry?.enabledInteractive ?? []
   const env = sceneConfig.environment ?? { preset: 'studio', background: false }
@@ -163,6 +164,7 @@ export default function CarViewer({
                 renderSettings={{ reflectionIntensity, shadows: stage.shadows !== false }}
               />
               {showPartLabels && <PartButtons parts={parts} onToggle={onToggle} />}
+              <PartPivotGizmo registry={registry} activePartId={activePartId} />
             </>
           )}
         </Suspense>
@@ -271,6 +273,102 @@ function EditorCameraRig({
   })
 
   return null
+}
+
+function getAxisColor(axis) {
+  if (!axis) return '#00a3ff'
+  const ax = Math.abs(axis.x)
+  const ay = Math.abs(axis.y)
+  const az = Math.abs(axis.z)
+  if (ax >= ay && ax >= az) return '#ef4444'
+  if (ay >= ax && ay >= az) return '#22c55e'
+  return '#009dff'
+}
+
+function PartPivotGizmo({ registry, activePartId }) {
+  const part = activePartId ? registry?.get?.(activePartId) : null
+
+  const data = useMemo(() => {
+    if (!part?.pivot || !part?.axis) return null
+
+    const pivot = part.pivot.clone()
+    const origin = part.origin?.clone?.() ?? pivot.clone()
+    const axis = (part.spinAxis || part.axis).clone().normalize()
+    const box = new THREE.Box3()
+    for (const object of part.meshObjects ?? []) {
+      object.updateWorldMatrix(true, false)
+      box.expandByObject(object)
+    }
+    const size = box.isEmpty() ? new THREE.Vector3(1, 1, 1) : box.getSize(new THREE.Vector3())
+    const length = Math.max(size.length() * 0.55, 0.55)
+    const start = pivot.clone().addScaledVector(axis, -length)
+    const end = pivot.clone().addScaledVector(axis, length)
+    const axisGeometry = new THREE.BufferGeometry().setFromPoints([start, end])
+    const offsetGeometry = new THREE.BufferGeometry().setFromPoints([origin, pivot])
+    const dotScale = Math.max(length * 0.055, 0.045)
+
+    return {
+      pivot,
+      origin,
+      axisGeometry,
+      offsetGeometry,
+      axisColor: getAxisColor(axis),
+      dotScale,
+      hasOffset: origin.distanceToSquared(pivot) > 0.000001,
+    }
+  }, [part, part?.pivot?.x, part?.pivot?.y, part?.pivot?.z, part?.pivotOffset?.x, part?.pivotOffset?.y, part?.pivotOffset?.z])
+
+  if (!data) return null
+
+  return (
+    <group renderOrder={20}>
+      <line geometry={data.axisGeometry} frustumCulled={false} renderOrder={21}>
+        <lineBasicMaterial
+          color={data.axisColor}
+          transparent
+          opacity={0.95}
+          depthTest={false}
+          depthWrite={false}
+          toneMapped={false}
+        />
+      </line>
+
+      {data.hasOffset && (
+        <line geometry={data.offsetGeometry} frustumCulled={false} renderOrder={22}>
+          <lineBasicMaterial
+            color='#f59e0b'
+            transparent
+            opacity={0.75}
+            depthTest={false}
+            depthWrite={false}
+            toneMapped={false}
+          />
+        </line>
+      )}
+
+      <mesh position={data.origin} frustumCulled={false} renderOrder={23}>
+        <sphereGeometry args={[data.dotScale * 0.68, 16, 16]} />
+        <meshBasicMaterial
+          color='#ffffff'
+          transparent
+          opacity={data.hasOffset ? 0.72 : 0.35}
+          depthTest={false}
+          depthWrite={false}
+          toneMapped={false}
+        />
+      </mesh>
+
+      <mesh position={data.pivot} frustumCulled={false} renderOrder={24}>
+        <sphereGeometry args={[data.dotScale, 20, 20]} />
+        <meshBasicMaterial
+          color='#f97316'
+          depthTest={false}
+          depthWrite={false}
+          toneMapped={false}
+        />
+      </mesh>
+    </group>
+  )
 }
 
 function ConfigurableLights({ lighting }) {
