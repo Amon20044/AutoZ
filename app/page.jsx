@@ -94,7 +94,7 @@ export default function LandingPage() {
 
       <section className='landing-hero-v2'>
         <iframe
-          src='https://auto-z-omega.vercel.app/frame/az-20aa774ed5'
+          src='https://auto-z-omega.vercel.app/frame/az-d5241d1a69'
           title='AutoZ live car viewer'
           allow='accelerometer; ambient-light-sensor; encrypted-media; gyroscope; xr-spatial-tracking'
           allowFullScreen
