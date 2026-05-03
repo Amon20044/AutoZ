@@ -664,7 +664,7 @@ export default function EditorPage({ initialPublishId = '' }) {
       const sourceModelFile = modelFileRef.current
       const optimized = await optimizePublishModelFile(sourceModelFile, {
         onProgress: setUploadProgress,
-        options: { textureMode: 'webp', maxTextureSize: 2048 },
+        options: { textureMode: 'ktx2', maxTextureSize: 2048 },
       })
       const modelFile = optimized.file
       const modelPath = optimized.optimized ? modelFile.name : (modelEntryRef.current?.path || modelFile.name)

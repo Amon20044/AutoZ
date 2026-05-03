@@ -1,5 +1,5 @@
 import { WebIO } from '@gltf-transform/core'
-import { EXTMeshoptCompression } from '@gltf-transform/extensions'
+import { EXTMeshoptCompression, KHRTextureBasisu } from '@gltf-transform/extensions'
 import {
   dedup,
   meshopt,
@@ -12,6 +12,7 @@ import {
   weld,
 } from '@gltf-transform/functions'
 import { MeshoptEncoder, MeshoptSimplifier } from 'meshoptimizer'
+import { encodeToKTX2 } from 'ktx2-encoder'
 import { LOD_VARIANTS } from '../lib/assets/lod-profiles.js'
 import { createBaseAssetManifest } from '../lib/assets/manifest.js'
 
@@ -47,9 +48,45 @@ function inspectStats(doc) {
   }
 }
 
+async function encodeTexturesToKTX2(doc, options = {}) {
+  const supportedMimeTypes = new Set(['image/jpeg', 'image/png', 'image/webp'])
+  const textures = doc.getRoot().listTextures()
+  let converted = 0
+
+  await Promise.all(textures.map(async (texture) => {
+    if (texture.getMimeType() === 'image/ktx2') return
+    if (!supportedMimeTypes.has(texture.getMimeType())) return
+    const image = texture.getImage()
+    if (!image) return
+
+    const ktx2Data = await encodeToKTX2(image, {
+      isUASTC: true,
+      enableRDO: true,
+      rdoQualityLevel: 1.2,
+      uastcLDRQualityLevel: 2,
+      needSupercompression: true,
+      generateMipmap: true,
+      isKTX2File: true,
+      wasmUrl: '/encoders/basis/basis_encoder.wasm',
+      jsUrl: '/encoders/basis/basis_encoder.js',
+      ...options,
+    })
+
+    texture.setImage(ktx2Data)
+    texture.setMimeType('image/ktx2')
+    converted += 1
+  }))
+
+  if (converted > 0) {
+    doc.createExtension(KHRTextureBasisu).setRequired(true)
+  }
+
+  return converted
+}
+
 function createIo() {
   return new WebIO()
-    .registerExtensions([EXTMeshoptCompression])
+    .registerExtensions([EXTMeshoptCompression, KHRTextureBasisu])
     .registerDependencies({
       'meshopt.encoder': MeshoptEncoder,
     })
@@ -107,8 +144,9 @@ async function optimizeLod({ buffer, lod, geometryCompression, textureMode }) {
 async function optimizePublishModel(message) {
   cancelled = false
   const { fileName, buffer, options = {} } = message
-  const textureMode = options.textureMode || 'webp'
+  const textureMode = options.textureMode || 'ktx2'
   const maxTextureSize = options.maxTextureSize || 2048
+  let actualTextureMode = textureMode
 
   postProgress('read', 0.04, 'Reading GLB')
   const io = createIo()
@@ -127,7 +165,7 @@ async function optimizePublishModel(message) {
   if (textureMode !== 'none') {
     postProgress('textures', 0.28, 'Optimizing textures')
     transforms.push(textureCompress({
-      targetFormat: 'webp',
+      targetFormat: textureMode === 'ktx2' ? 'png' : 'webp',
       resize: [maxTextureSize, maxTextureSize],
       resizeFilter: TextureResizeFilter.LANCZOS2,
       quality: 88,
@@ -150,6 +188,62 @@ async function optimizePublishModel(message) {
   await doc.transform(...transforms)
   if (cancelled) return
 
+  if (textureMode === 'ktx2') {
+    postProgress('ktx2', 0.72, 'Encoding textures to KTX2')
+    try {
+      await encodeTexturesToKTX2(doc)
+    } catch (err) {
+      actualTextureMode = 'webp-fallback'
+      postProgress('textures', 0.74, `KTX2 unavailable, falling back to WebP: ${err.message}`)
+      const fallbackDoc = await io.readBinary(new Uint8Array(buffer))
+      await fallbackDoc.transform(
+        dedup(),
+        prune(),
+        weld({ tolerance: 0.00001 }),
+        textureCompress({
+          targetFormat: 'webp',
+          resize: [maxTextureSize, maxTextureSize],
+          resizeFilter: TextureResizeFilter.LANCZOS2,
+          quality: 88,
+          effort: 50,
+        }),
+        quantize({
+          quantizePosition: 14,
+          quantizeNormal: 10,
+          quantizeTexcoord: 12,
+          quantizeColor: 8,
+        }),
+        resample(),
+        prune(),
+      )
+      const fallbackOutput = await io.writeBinary(fallbackDoc)
+      const fallbackBlob = new Blob([fallbackOutput], { type: 'model/gltf-binary' })
+      const optimizedName = fileName.replace(/\.(glb|gltf)$/i, '') + '.optimized.glb'
+      self.postMessage({
+        type: 'PUBLISH_MODEL_READY',
+        blob: fallbackBlob,
+        fileName: optimizedName,
+        metadata: {
+          originalBytes: before.bytes,
+          optimizedBytes: fallbackBlob.size,
+          originalTriangles: before.originalTriangles,
+          triangles: countTriangles(fallbackDoc),
+          materialCount: before.materialCount,
+          textureCount: before.textureCount,
+          compression: {
+            geometry: 'quantized',
+            textures: 'webp',
+            textureFallback: 'webp',
+            requestedTextures: 'ktx2',
+            fallbackReason: err.message,
+          },
+        },
+      })
+      postProgress('done', 1, 'Optimized WebP fallback ready')
+      return
+    }
+  }
+
   postProgress('write', 0.86, 'Writing optimized GLB')
   const output = await io.writeBinary(doc)
   const blob = new Blob([output], { type: 'model/gltf-binary' })
@@ -167,8 +261,8 @@ async function optimizePublishModel(message) {
       textureCount: before.textureCount,
       compression: {
         geometry: 'quantized',
-        textures: textureMode === 'none' ? 'source' : 'webp',
-        textureFallback: textureMode === 'none' ? 'source' : 'webp',
+        textures: actualTextureMode === 'none' ? 'source' : actualTextureMode,
+        textureFallback: actualTextureMode === 'none' ? 'source' : 'webp',
       },
     },
   })

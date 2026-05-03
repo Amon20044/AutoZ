@@ -104,7 +104,7 @@ export async function optimizePublishModelFile(file, {
         fileName: file.name,
         buffer,
         options: {
-          textureMode: options.textureMode || 'webp',
+          textureMode: options.textureMode || 'ktx2',
           maxTextureSize: options.maxTextureSize || 2048,
         },
       }, [buffer])
