@@ -669,7 +669,7 @@
         1.7574209220222836,
         0.8748229558752424
       ],
-      "openAngle": 80,
+      "openAngle": 45,
       "closeAngle": 0,
       "lambda": 8,
       "spinSpeed": 5.5,
@@ -721,7 +721,7 @@
         1.7574209220222836,
         0.8748233172933038
       ],
-      "openAngle": -80,
+      "openAngle": 45,
       "closeAngle": 0,
       "lambda": 8,
       "spinSpeed": 5.5,
@@ -1045,15 +1045,15 @@
       ],
       "pivot": [
         1.5093758971526643,
-        1.3906832295222302,
-        -2.0704790075201336
+        1.4406832295222303,
+        -2.0004790075201337
       ],
       "pivotOffset": [
         0,
-        0,
-        0
+        0.05,
+        0.07
       ],
-      "pivotSource": "origin",
+      "pivotSource": "offset",
       "axis": [
         0,
         1,
@@ -1069,7 +1069,7 @@
         1.5023730048285255,
         -2.0704790075201336
       ],
-      "openAngle": 90,
+      "openAngle": -90,
       "closeAngle": 0,
       "lambda": 8,
       "spinSpeed": 5.5,
@@ -1141,15 +1141,15 @@
       ],
       "pivot": [
         0.41082332956774054,
-        1.4644557320448015,
-        2.1124344324229893
+        1.5744557320448016,
+        1.3224344324229893
       ],
       "pivotOffset": [
         0,
-        0,
-        0
+        0.11,
+        -0.79
       ],
-      "pivotSource": "origin",
+      "pivotSource": "offset",
       "axis": [
         1,
         0,
@@ -1366,7 +1366,7 @@
         "hinge_open_close"
       ],
       "visibleInUI": true,
-      "animationEnabled": true,
+      "animationEnabled": false,
       "material": null
     },
     {
@@ -1385,15 +1385,15 @@
       ],
       "pivot": [
         0.41336262433432586,
-        1.5107990385214334,
-        -2.7297204648145694
+        1.8607990385214332,
+        -2.449720464814569
       ],
       "pivotOffset": [
         0,
-        0,
-        0
+        0.35,
+        0.28
       ],
-      "pivotSource": "origin",
+      "pivotSource": "offset",
       "axis": [
         1,
         0,
@@ -1409,7 +1409,7 @@
         2.184515939807854,
         -2.630251513179629
       ],
-      "openAngle": -65,
+      "openAngle": 50,
       "closeAngle": 0,
       "lambda": 8,
       "spinSpeed": 5.5,
@@ -1734,5 +1734,5 @@
       "material": null
     }
   ],
-  "publishedAt": "2026-05-27T22:04:30.476Z"
+  "publishedAt": "2026-05-27T22:09:09.814Z"
 }
