@@ -29,14 +29,27 @@ import { pickDeviceLod } from '@/lib/assets/lod-manifest'
 
 installThreeConsoleFilter()
 
-function attachContextRecovery(renderer, label) {
+function getInitialFrameQualityMode() {
+  if (typeof window === 'undefined') return 'balanced'
+
+  const memory = navigator.deviceMemory || 4
+  const cores = navigator.hardwareConcurrency || 4
+  const mobile = window.innerWidth < 720 || /Android|iPhone|iPod|Mobile/i.test(navigator.userAgent || '')
+  const lowEnd = memory <= 4 || cores <= 4
+
+  return mobile || lowEnd ? 'low' : 'balanced'
+}
+
+function attachContextRecovery(renderer, label, onStatus) {
   const canvas = renderer?.domElement
   if (!canvas) return
   canvas.addEventListener('webglcontextlost', (event) => {
     event.preventDefault()
+    onStatus?.('lost')
     console.warn(`[${label}] WebGL context lost — waiting for restore`)
   }, false)
   canvas.addEventListener('webglcontextrestored', () => {
+    onStatus?.('restored')
     console.log(`[${label}] WebGL context restored`)
     try { renderer.forceContextRestore?.() } catch { /* ignore */ }
   }, false)
@@ -68,11 +81,25 @@ export default function FrameCanvas({ snapshot }) {
   const [cameraMode, setCameraMode] = useState(snapshot.camera?.frame?.selectedMode ?? 'auto')
   const [frameInfo, setFrameInfo] = useState(null)
   const [fpsSample, setFpsSample] = useState({ fps: null, regression: 0 })
+  const [qualityMode, setQualityMode] = useState(() => getInitialFrameQualityMode())
+  const [webglStatus, setWebglStatus] = useState('ready')
   const controlsRef = useRef(null)
+  const hardwareLowRef = useRef(qualityMode === 'low')
+  const healthySinceRef = useRef(0)
   const isCockpit = cameraMode === 'cockpit'
-  const performanceRegressed = fpsSample.regression > 0.5
+  const performanceRegressed = qualityMode === 'low' || webglStatus === 'lost'
+  const effectivePerformanceRegression = performanceRegressed ? 1 : (fpsSample.regression ?? 0)
   const runtimeStage = useMemo(
-    () => (performanceRegressed ? { ...stage, shadows: false, shadowResolution: 512 } : stage),
+    () => (performanceRegressed
+      ? {
+          ...stage,
+          shadows: false,
+          shadowResolution: 256,
+          liveShadows: false,
+          environmentIntensity: Math.min(stage.environmentIntensity ?? 1.18, 0.9),
+          backgroundIntensity: Math.min(stage.backgroundIntensity ?? 0.75, 0.55),
+        }
+      : stage),
     [performanceRegressed, stage],
   )
 
@@ -145,12 +172,49 @@ export default function FrameCanvas({ snapshot }) {
     })
   }, [])
 
+  useEffect(() => {
+    const fps = fpsSample.fps
+    const regression = fpsSample.regression ?? 0
+    if (fps == null) return
+    if (hardwareLowRef.current) return
+
+    if (fps < 34 || regression > 0.58) {
+      healthySinceRef.current = 0
+      setQualityMode('low')
+      return
+    }
+
+    if (qualityMode !== 'low') return
+
+    if (fps > 54 && regression < 0.18) {
+      const now = performance.now()
+      if (!healthySinceRef.current) {
+        healthySinceRef.current = now
+        return
+      }
+      if (now - healthySinceRef.current > 9000) {
+        setQualityMode('balanced')
+        healthySinceRef.current = 0
+      }
+    } else {
+      healthySinceRef.current = 0
+    }
+  }, [fpsSample.fps, fpsSample.regression, qualityMode])
+
+  const handleWebglStatus = useCallback((status) => {
+    setWebglStatus(status === 'lost' ? 'lost' : 'ready')
+    if (status === 'lost') {
+      healthySinceRef.current = 0
+      setQualityMode('low')
+    }
+  }, [])
+
   return (
     <div className='frame-canvas-shell'>
       <Canvas
         shadows={{ type: THREE.PCFShadowMap }}
         gl={{
-          antialias: true,
+          antialias: !performanceRegressed,
           toneMapping: THREE.AgXToneMapping,
           toneMappingExposure: post.exposure ?? 1.1,
           outputColorSpace: THREE.SRGBColorSpace,
@@ -158,9 +222,9 @@ export default function FrameCanvas({ snapshot }) {
           preserveDrawingBuffer: false,
           failIfMajorPerformanceCaveat: false,
         }}
-        dpr={[1, performanceRegressed ? 1.25 : 2]}
+        dpr={[1, performanceRegressed ? 1 : 1.75]}
         style={{ background: backgroundColor, width: '100%', height: '100%' }}
-        onCreated={({ gl }) => attachContextRecovery(gl, 'FrameCanvas')}
+        onCreated={({ gl }) => attachContextRecovery(gl, 'FrameCanvas', handleWebglStatus)}
       >
         <PerspectiveCamera
           makeDefault
@@ -170,7 +234,7 @@ export default function FrameCanvas({ snapshot }) {
           position={cam.position ?? [5, 3, -7]}
         />
         <RendererSettings exposure={post.exposure ?? 1.1} />
-        <FrameAdaptiveQuality performanceRegression={fpsSample.regression} />
+        <FrameAdaptiveQuality performanceRegression={effectivePerformanceRegression} />
         <FpsTracker onSample={handleFpsSample} />
 
         <OrbitControls
@@ -218,7 +282,7 @@ export default function FrameCanvas({ snapshot }) {
                 onProgress={setModelLoadProgress}
                 onError={setModelLoadError}
                 showPartLabels={showPartLabels}
-                performanceRegression={fpsSample.regression}
+                performanceRegression={effectivePerformanceRegression}
               />
             )}
           </Suspense>
@@ -251,7 +315,14 @@ export default function FrameCanvas({ snapshot }) {
         </div>
       )}
 
-      {!modelReady && snapshot.model?.url && !modelLoadError && (
+      {webglStatus === 'lost' && !modelLoadError && (
+        <div className='frame-loading frame-loading--context' role='status'>
+          <div className='az-spinner' />
+          <div>Restoring 3D view</div>
+        </div>
+      )}
+
+      {!modelReady && snapshot.model?.url && !modelLoadError && webglStatus !== 'lost' && (
         <div className='frame-loading'>
           <div className='az-spinner' />
           <div>{modelLoadProgress?.statusText || 'Loading model'}</div>

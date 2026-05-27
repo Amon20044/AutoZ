@@ -5,6 +5,7 @@ import { useFrame, useThree } from '@react-three/fiber'
 import * as THREE from 'three'
 
 const HYSTERESIS = 3
+const SWITCH_COOLDOWN_SECONDS = 1.5
 
 function getDeviceLods(manifest, deviceProfile) {
   const lods = (manifest?.lods ?? [])
@@ -43,6 +44,7 @@ export function useCameraDistanceLod({ manifest, deviceProfile, currentLodId, ob
   const { camera } = useThree()
   const [desiredLodId, setDesiredLodId] = useState(currentLodId)
   const lastCheck = useRef(0)
+  const lastSwitch = useRef(0)
   const sphere = useMemo(() => {
     if (!object) return null
     const box = new THREE.Box3().setFromObject(object)
@@ -58,6 +60,8 @@ export function useCameraDistanceLod({ manifest, deviceProfile, currentLodId, ob
     const distance = camera.position.distanceTo(sphere.center)
     const next = pickDistanceLod(lods, distance, currentLodId)
     if (next?.id && next.id !== desiredLodId) {
+      if (state.clock.elapsedTime - lastSwitch.current < SWITCH_COOLDOWN_SECONDS) return
+      lastSwitch.current = state.clock.elapsedTime
       setDesiredLodId(next.id)
     }
   })
