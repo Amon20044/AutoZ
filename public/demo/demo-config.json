@@ -1,0 +1,1554 @@
+{
+  "version": 1,
+  "slug": "demo-landing",
+  "model": {
+    "url": "/Fortuner-compressed.glb",
+    "fileName": "Fortuner-compressed.glb",
+    "path": "Fortuner-compressed.glb",
+    "fileSize": 0,
+    "contentType": "model/gltf-binary"
+  },
+  "runtimeAssets": [],
+  "thumbnail": null,
+  "textureAssets": [],
+  "import": {
+    "combinedScale": 1.276545027972997,
+    "centerOffset": [
+      -0.4108154164143956,
+      -0.3193961736454254
+    ],
+    "groundOffset": -0.001432604129489218,
+    "rotation": {
+      "quaternion": [
+        0,
+        0,
+        0,
+        1
+      ],
+      "euler": [
+        0,
+        0,
+        0
+      ]
+    },
+    "scaleFactor": 1.276545027972997,
+    "unitScale": 1,
+    "dimensions": {
+      "width": 3.414351066745988,
+      "height": 5.577032537821323,
+      "depth": 6
+    },
+    "boundingBoxNormalized": {
+      "min": [
+        -1.7071755333729943,
+        0,
+        -3
+      ],
+      "max": [
+        1.707175533372994,
+        5.577032537821322,
+        3
+      ]
+    }
+  },
+  "parts": [
+    {
+      "id": "auto_door_rear_right_Door_RL",
+      "typeKey": "door.rear.right",
+      "label": "Rear Right Door",
+      "rootName": "Door_RL",
+      "nodePath": "AuxScene > Scene > Door_RL",
+      "meshNames": [
+        "Door_RL"
+      ],
+      "origin": [
+        1.5099865034564446,
+        1.266950120300221,
+        -0.2506936817325667
+      ],
+      "pivot": [
+        1.5099865034564446,
+        1.266950120300221,
+        -0.2506936817325667
+      ],
+      "pivotOffset": [
+        0,
+        0,
+        0
+      ],
+      "pivotSource": "origin",
+      "axis": [
+        0,
+        -1,
+        0
+      ],
+      "spinAxis": [
+        0,
+        -1,
+        0
+      ],
+      "anchor": [
+        1.3587097516706619,
+        2.150789011135836,
+        -0.8985155234525135
+      ],
+      "openAngle": 65,
+      "closeAngle": 0,
+      "lambda": 8,
+      "spinSpeed": 5.5,
+      "defaultState": "closed",
+      "interactions": [
+        "hinge_open_close"
+      ],
+      "visibleInUI": true,
+      "animationEnabled": true,
+      "material": null
+    },
+    {
+      "id": "auto_door_rear_left_Door_RR",
+      "typeKey": "door.rear.left",
+      "label": "Rear Left Door",
+      "rootName": "Door_RR",
+      "nodePath": "AuxScene > Scene > Door_RR",
+      "meshNames": [
+        "Door_RR"
+      ],
+      "origin": [
+        -0.6879615347206651,
+        1.2754206183398893,
+        -0.2576800450359876
+      ],
+      "pivot": [
+        -0.6879615347206651,
+        1.2754206183398893,
+        -0.2576800450359876
+      ],
+      "pivotOffset": [
+        0,
+        0,
+        0
+      ],
+      "pivotSource": "origin",
+      "axis": [
+        0,
+        1,
+        0
+      ],
+      "spinAxis": [
+        0,
+        1,
+        0
+      ],
+      "anchor": [
+        -0.5369790683430322,
+        2.150789315487887,
+        -0.8985155857031758
+      ],
+      "openAngle": 65,
+      "closeAngle": 0,
+      "lambda": 8,
+      "spinSpeed": 5.5,
+      "defaultState": "closed",
+      "interactions": [
+        "hinge_open_close"
+      ],
+      "visibleInUI": true,
+      "animationEnabled": true,
+      "material": null
+    },
+    {
+      "id": "auto_door_front_left_Door_FR",
+      "typeKey": "door.front.left",
+      "label": "Front Left Door",
+      "rootName": "Door_FR",
+      "nodePath": "AuxScene > Scene > Door_FR",
+      "meshNames": [
+        "Door_FR"
+      ],
+      "origin": [
+        -0.6756733206321275,
+        1.2796521770910965,
+        1.0879431594137206
+      ],
+      "pivot": [
+        -0.6756733206321275,
+        1.2796521770910965,
+        1.0879431594137206
+      ],
+      "pivotOffset": [
+        0,
+        0,
+        0
+      ],
+      "pivotSource": "origin",
+      "axis": [
+        0,
+        1,
+        0
+      ],
+      "spinAxis": [
+        0,
+        1,
+        0
+      ],
+      "anchor": [
+        -0.5302509712016734,
+        2.1457112015047977,
+        0.42244334892359814
+      ],
+      "openAngle": 65,
+      "closeAngle": 0,
+      "lambda": 8,
+      "spinSpeed": 5.5,
+      "defaultState": "closed",
+      "interactions": [
+        "hinge_open_close"
+      ],
+      "visibleInUI": true,
+      "animationEnabled": true,
+      "material": null
+    },
+    {
+      "id": "auto_door_front_right_Door_FL",
+      "typeKey": "door.front.right",
+      "label": "Front Right Door",
+      "rootName": "Door_FL",
+      "nodePath": "AuxScene > Scene > Door_FL",
+      "meshNames": [
+        "Door_FL"
+      ],
+      "origin": [
+        1.5004374578334634,
+        1.2140093743982705,
+        1.1323841894790365
+      ],
+      "pivot": [
+        1.5004374578334634,
+        1.2140093743982705,
+        1.1323841894790365
+      ],
+      "pivotOffset": [
+        0,
+        0,
+        0
+      ],
+      "pivotSource": "origin",
+      "axis": [
+        0,
+        -1,
+        0
+      ],
+      "spinAxis": [
+        0,
+        -1,
+        0
+      ],
+      "anchor": [
+        1.351897421095119,
+        2.1457112015047977,
+        0.422443425011611
+      ],
+      "openAngle": 65,
+      "closeAngle": 0,
+      "lambda": 8,
+      "spinSpeed": 5.5,
+      "defaultState": "closed",
+      "interactions": [
+        "hinge_open_close"
+      ],
+      "visibleInUI": true,
+      "animationEnabled": true,
+      "material": null
+    },
+    {
+      "id": "auto_mirror_right_mirror_r",
+      "typeKey": "mirror.right",
+      "label": "Right Mirror",
+      "rootName": "mirror_r",
+      "nodePath": "AuxScene > Scene > mirror_r",
+      "meshNames": [
+        "mirror_r"
+      ],
+      "origin": [
+        -0.6664051919528917,
+        1.5934823604145112,
+        0.9890828411791572
+      ],
+      "pivot": [
+        -0.6664051919528917,
+        1.5934823604145112,
+        0.9890828411791572
+      ],
+      "pivotOffset": [
+        0,
+        0,
+        0
+      ],
+      "pivotSource": "origin",
+      "axis": [
+        0,
+        -1,
+        0
+      ],
+      "spinAxis": [
+        0,
+        -1,
+        0
+      ],
+      "anchor": [
+        -0.74493411896345,
+        1.7574209220222836,
+        0.8748229558752424
+      ],
+      "openAngle": 45,
+      "closeAngle": 0,
+      "lambda": 8,
+      "spinSpeed": 5.5,
+      "defaultState": "closed",
+      "interactions": [
+        "fold"
+      ],
+      "visibleInUI": true,
+      "animationEnabled": true,
+      "material": null
+    },
+    {
+      "id": "auto_mirror_left_mirror_l",
+      "typeKey": "mirror.left",
+      "label": "Left Mirror",
+      "rootName": "mirror_l",
+      "nodePath": "AuxScene > Scene > mirror_l",
+      "meshNames": [
+        "mirror_l"
+      ],
+      "origin": [
+        1.4635770004085618,
+        1.5908384541411458,
+        1.0042815739383744
+      ],
+      "pivot": [
+        1.4635770004085618,
+        1.5908384541411458,
+        1.0042815739383744
+      ],
+      "pivotOffset": [
+        0,
+        0,
+        0
+      ],
+      "pivotSource": "origin",
+      "axis": [
+        0,
+        1,
+        0
+      ],
+      "spinAxis": [
+        0,
+        1,
+        0
+      ],
+      "anchor": [
+        1.5665809112529536,
+        1.7574209220222836,
+        0.8748233172933038
+      ],
+      "openAngle": 45,
+      "closeAngle": 0,
+      "lambda": 8,
+      "spinSpeed": 5.5,
+      "defaultState": "closed",
+      "interactions": [
+        "fold"
+      ],
+      "visibleInUI": true,
+      "animationEnabled": true,
+      "material": null
+    },
+    {
+      "id": "auto_wheel_rear_right_Wheel_RR",
+      "typeKey": "wheel.rear.right",
+      "label": "Rear Right Wheel",
+      "rootName": "Wheel_RR",
+      "nodePath": "AuxScene > Scene > Wheel_RR",
+      "meshNames": [
+        "Wheel_RR"
+      ],
+      "origin": [
+        -0.523188225259354,
+        0.46696828504517496,
+        -1.6903183380430122
+      ],
+      "pivot": [
+        -0.523188225259354,
+        0.46696828504517496,
+        -1.6903183380430122
+      ],
+      "pivotOffset": [
+        0,
+        0,
+        0
+      ],
+      "pivotSource": "origin",
+      "axis": [
+        1,
+        0,
+        0
+      ],
+      "spinAxis": [
+        1,
+        0,
+        0
+      ],
+      "anchor": [
+        0.38376468214478066,
+        0.9316406523441296,
+        -1.6899518220847183
+      ],
+      "openAngle": 0,
+      "closeAngle": 0,
+      "lambda": 8,
+      "spinSpeed": 5.5,
+      "defaultState": "off",
+      "interactions": [
+        "spin"
+      ],
+      "visibleInUI": true,
+      "animationEnabled": true,
+      "material": null
+    },
+    {
+      "id": "auto_wheel_rear_right_Wheel_RL",
+      "typeKey": "wheel.rear.right",
+      "label": "Rear Right Wheel",
+      "rootName": "Wheel_RL",
+      "nodePath": "AuxScene > Scene > Wheel_RL",
+      "meshNames": [
+        "Wheel_RL"
+      ],
+      "origin": [
+        1.3847488298667157,
+        0.4669577848993903,
+        -1.69028272885296
+      ],
+      "pivot": [
+        1.3847488298667157,
+        0.4669577848993903,
+        -1.69028272885296
+      ],
+      "pivotOffset": [
+        0,
+        0,
+        0
+      ],
+      "pivotSource": "origin",
+      "axis": [
+        1,
+        0,
+        0
+      ],
+      "spinAxis": [
+        1,
+        0,
+        0
+      ],
+      "anchor": [
+        1.3740484965200586,
+        0.9316407094101393,
+        -1.6899518220847183
+      ],
+      "openAngle": 0,
+      "closeAngle": 0,
+      "lambda": 8,
+      "spinSpeed": 5.5,
+      "defaultState": "off",
+      "interactions": [
+        "spin"
+      ],
+      "visibleInUI": true,
+      "animationEnabled": true,
+      "material": null
+    },
+    {
+      "id": "auto_wheel_front_right_Wheel_FR",
+      "typeKey": "wheel.front.right",
+      "label": "Front Right Wheel",
+      "rootName": "Wheel_FR",
+      "nodePath": "AuxScene > Scene > Wheel_FR",
+      "meshNames": [
+        "Wheel_FR"
+      ],
+      "origin": [
+        -0.5509246647015131,
+        0.46550956370524676,
+        1.7462337448105438
+      ],
+      "pivot": [
+        -0.5509246647015131,
+        0.46550956370524676,
+        1.7462337448105438
+      ],
+      "pivotOffset": [
+        0,
+        0,
+        0
+      ],
+      "pivotSource": "origin",
+      "axis": [
+        1,
+        0,
+        0
+      ],
+      "spinAxis": [
+        1,
+        0,
+        0
+      ],
+      "anchor": [
+        0.3904878323462004,
+        0.9316407284321425,
+        1.746219059824048
+      ],
+      "openAngle": 0,
+      "closeAngle": 0,
+      "lambda": 8,
+      "spinSpeed": 5.5,
+      "defaultState": "off",
+      "interactions": [
+        "spin"
+      ],
+      "visibleInUI": true,
+      "animationEnabled": true,
+      "material": null
+    },
+    {
+      "id": "auto_wheel_front_right_Wheel_FL",
+      "typeKey": "wheel.front.right",
+      "label": "Front Right Wheel",
+      "rootName": "Wheel_FL",
+      "nodePath": "AuxScene > Scene > Wheel_FL",
+      "meshNames": [
+        "Wheel_FL"
+      ],
+      "origin": [
+        1.3728151098304289,
+        0.465608516166065,
+        1.7462221794325783
+      ],
+      "pivot": [
+        1.3728151098304289,
+        0.465608516166065,
+        1.7462221794325783
+      ],
+      "pivotOffset": [
+        0,
+        0,
+        0
+      ],
+      "pivotSource": "origin",
+      "axis": [
+        1,
+        0,
+        0
+      ],
+      "spinAxis": [
+        1,
+        0,
+        0
+      ],
+      "anchor": [
+        1.3740484965200586,
+        0.9316406333221263,
+        1.7462188315600093
+      ],
+      "openAngle": 0,
+      "closeAngle": 0,
+      "lambda": 8,
+      "spinSpeed": 5.5,
+      "defaultState": "off",
+      "interactions": [
+        "spin"
+      ],
+      "visibleInUI": true,
+      "animationEnabled": true,
+      "material": null
+    },
+    {
+      "id": "auto_light_head_front_left_headlight_l",
+      "typeKey": "light.head.front.left",
+      "label": "Left Headlight",
+      "rootName": "headlight_l",
+      "nodePath": "AuxScene > Scene > headlight_l",
+      "meshNames": [
+        "headlight_l"
+      ],
+      "origin": [
+        -0.41072127789217167,
+        1.3215655633668073,
+        2.3576306030451843
+      ],
+      "pivot": null,
+      "pivotOffset": [
+        0,
+        0,
+        0
+      ],
+      "pivotSource": null,
+      "axis": null,
+      "spinAxis": null,
+      "anchor": [
+        -0.41072127789217167,
+        1.444114280695332,
+        2.3576306030451843
+      ],
+      "openAngle": 0,
+      "closeAngle": 0,
+      "lambda": 8,
+      "spinSpeed": 5.5,
+      "defaultState": "off",
+      "interactions": [
+        "toggle"
+      ],
+      "visibleInUI": true,
+      "animationEnabled": true,
+      "material": null
+    },
+    {
+      "id": "auto_light_head_front_right_headlight_r",
+      "typeKey": "light.head.front.right",
+      "label": "Right Headlight",
+      "rootName": "headlight_r",
+      "nodePath": "AuxScene > Scene > headlight_r",
+      "meshNames": [
+        "headlight_r"
+      ],
+      "origin": [
+        1.2324530414701174,
+        1.3215652970587621,
+        2.3576306030451843
+      ],
+      "pivot": null,
+      "pivotOffset": [
+        0,
+        0,
+        0
+      ],
+      "pivotSource": null,
+      "axis": null,
+      "spinAxis": null,
+      "anchor": [
+        1.2324530414701174,
+        1.4441140143872868,
+        2.3576306030451843
+      ],
+      "openAngle": 0,
+      "closeAngle": 0,
+      "lambda": 8,
+      "spinSpeed": 5.5,
+      "defaultState": "off",
+      "interactions": [
+        "toggle"
+      ],
+      "visibleInUI": true,
+      "animationEnabled": true,
+      "material": null
+    },
+    {
+      "id": "auto_cap_fuel_fuel_cap",
+      "typeKey": "cap.fuel",
+      "label": "Fuel Cap",
+      "rootName": "fuel_cap",
+      "nodePath": "AuxScene > Scene > fuel_cap",
+      "meshNames": [
+        "fuel_cap"
+      ],
+      "origin": [
+        1.5093758971526643,
+        1.3906832295222302,
+        -2.0704790075201336
+      ],
+      "pivot": [
+        1.5093758971526643,
+        1.3906832295222302,
+        -1.9404790075201337
+      ],
+      "pivotOffset": [
+        0,
+        0,
+        0.13
+      ],
+      "pivotSource": "offset",
+      "axis": [
+        0,
+        1,
+        0
+      ],
+      "spinAxis": [
+        0,
+        1,
+        0
+      ],
+      "anchor": [
+        1.5093758971526643,
+        1.5023730048285255,
+        -2.0704790075201336
+      ],
+      "openAngle": -90,
+      "closeAngle": 0,
+      "lambda": 8,
+      "spinSpeed": 5.5,
+      "defaultState": "closed",
+      "interactions": [
+        "hinge_open_close"
+      ],
+      "visibleInUI": true,
+      "animationEnabled": true,
+      "material": null
+    },
+    {
+      "id": "auto_glass_windshield_windshield",
+      "typeKey": "glass.windshield",
+      "label": "Windshield",
+      "rootName": "windshield",
+      "nodePath": "AuxScene > Scene > windshield",
+      "meshNames": [
+        "windshield"
+      ],
+      "origin": [
+        0.41081295247053934,
+        1.8227627828876232,
+        0.9406835795270897
+      ],
+      "pivot": null,
+      "pivotOffset": [
+        0,
+        0,
+        0
+      ],
+      "pivotSource": null,
+      "axis": null,
+      "spinAxis": null,
+      "anchor": [
+        0.4108129524705394,
+        2.1016739934872875,
+        0.9406835795270897
+      ],
+      "openAngle": 0,
+      "closeAngle": 0,
+      "lambda": 8,
+      "spinSpeed": 5.5,
+      "defaultState": "closed",
+      "interactions": [
+        "tint"
+      ],
+      "visibleInUI": true,
+      "animationEnabled": true,
+      "material": null
+    },
+    {
+      "id": "auto_bonnet_front_FrontBonnet001",
+      "typeKey": "bonnet.front",
+      "label": "Bonnet / Hood",
+      "rootName": "FrontBonnet001",
+      "nodePath": "AuxScene > Scene > FrontBonnet001",
+      "meshNames": [
+        "FrontBonnet001"
+      ],
+      "origin": [
+        0.41082332956774054,
+        1.4644557320448015,
+        2.1124344324229893
+      ],
+      "pivot": [
+        0.41082332956774054,
+        1.3644557320448014,
+        1.3524344324229893
+      ],
+      "pivotOffset": [
+        0,
+        -0.1,
+        -0.76
+      ],
+      "pivotSource": "offset",
+      "axis": [
+        1,
+        0,
+        0
+      ],
+      "spinAxis": [
+        1,
+        0,
+        0
+      ],
+      "anchor": [
+        0.4108233295677406,
+        1.6059432946012433,
+        2.1124344324229893
+      ],
+      "openAngle": -59.99999999999999,
+      "closeAngle": 0,
+      "lambda": 8,
+      "spinSpeed": 5.5,
+      "defaultState": "closed",
+      "interactions": [
+        "hinge_open_close"
+      ],
+      "visibleInUI": true,
+      "animationEnabled": true,
+      "material": null
+    },
+    {
+      "id": "auto_bumper_front_front_bumper",
+      "typeKey": "bumper.front",
+      "label": "Front Bumper",
+      "rootName": "front_bumper",
+      "nodePath": "AuxScene > Scene > front_bumper",
+      "meshNames": [
+        "front_bumper"
+      ],
+      "origin": [
+        0.4107683801042044,
+        0.8299749120067493,
+        2.7229046527921357
+      ],
+      "pivot": null,
+      "pivotOffset": [
+        0,
+        0,
+        0
+      ],
+      "pivotSource": null,
+      "axis": null,
+      "spinAxis": null,
+      "anchor": [
+        0.41082339173755433,
+        1.2411520837630605,
+        2.5660701383361233
+      ],
+      "openAngle": 0,
+      "closeAngle": 0,
+      "lambda": 8,
+      "spinSpeed": 5.5,
+      "defaultState": "closed",
+      "interactions": [
+        "none"
+      ],
+      "visibleInUI": true,
+      "animationEnabled": true,
+      "material": null
+    },
+    {
+      "id": "auto_bumper_rear_rear_bumper",
+      "typeKey": "bumper.rear",
+      "label": "Rear Bumper",
+      "rootName": "rear_bumper",
+      "nodePath": "AuxScene > Scene > rear_bumper",
+      "meshNames": [
+        "rear_bumper"
+      ],
+      "origin": [
+        0.4134634329265533,
+        0.9668952532340956,
+        -2.5364226723611614
+      ],
+      "pivot": null,
+      "pivotOffset": [
+        0,
+        0,
+        0
+      ],
+      "pivotSource": null,
+      "axis": null,
+      "spinAxis": null,
+      "anchor": [
+        0.41346343292655335,
+        1.3598195699771431,
+        -2.5364226723611614
+      ],
+      "openAngle": 0,
+      "closeAngle": 0,
+      "lambda": 8,
+      "spinSpeed": 5.5,
+      "defaultState": "closed",
+      "interactions": [
+        "none"
+      ],
+      "visibleInUI": true,
+      "animationEnabled": true,
+      "material": null
+    },
+    {
+      "id": "auto_door_rear_left_backRightRearLight",
+      "typeKey": "door.rear.left",
+      "label": "Rear Left Door",
+      "rootName": "backRightRearLight",
+      "nodePath": "AuxScene > Scene > backRightRearLight",
+      "meshNames": [
+        "backRightRearLight"
+      ],
+      "origin": [
+        -0.566722438386545,
+        1.455856264823213,
+        -2.497224715090972
+      ],
+      "pivot": [
+        -0.566722438386545,
+        1.455856264823213,
+        -2.497224715090972
+      ],
+      "pivotOffset": [
+        0,
+        0,
+        0
+      ],
+      "pivotSource": "origin",
+      "axis": [
+        0,
+        1,
+        0
+      ],
+      "spinAxis": [
+        0,
+        1,
+        0
+      ],
+      "anchor": [
+        -0.566722438386545,
+        1.5627248937500984,
+        -2.497224715090972
+      ],
+      "openAngle": 65,
+      "closeAngle": 0,
+      "lambda": 8,
+      "spinSpeed": 5.5,
+      "defaultState": "closed",
+      "interactions": [
+        "hinge_open_close"
+      ],
+      "visibleInUI": true,
+      "animationEnabled": false,
+      "material": null
+    },
+    {
+      "id": "auto_door_rear_right_backLeftRearLight",
+      "typeKey": "door.rear.right",
+      "label": "Rear Right Door",
+      "rootName": "backLeftRearLight",
+      "nodePath": "AuxScene > Scene > backLeftRearLight",
+      "meshNames": [
+        "backLeftRearLight"
+      ],
+      "origin": [
+        1.388453098688303,
+        1.455856264823213,
+        -2.497224715090972
+      ],
+      "pivot": [
+        1.388453098688303,
+        1.455856264823213,
+        -2.497224715090972
+      ],
+      "pivotOffset": [
+        0,
+        0,
+        0
+      ],
+      "pivotSource": "origin",
+      "axis": [
+        0,
+        -1,
+        0
+      ],
+      "spinAxis": [
+        0,
+        -1,
+        0
+      ],
+      "anchor": [
+        1.388453098688303,
+        1.5627248937500984,
+        -2.497224715090972
+      ],
+      "openAngle": 65,
+      "closeAngle": 0,
+      "lambda": 8,
+      "spinSpeed": 5.5,
+      "defaultState": "closed",
+      "interactions": [
+        "hinge_open_close"
+      ],
+      "visibleInUI": true,
+      "animationEnabled": false,
+      "material": null
+    },
+    {
+      "id": "auto_bonnet_front_backBonnet",
+      "typeKey": "bonnet.front",
+      "label": "Bonnet / Hood",
+      "rootName": "backBonnet",
+      "nodePath": "AuxScene > Scene > backBonnet",
+      "meshNames": [
+        "backBonnet"
+      ],
+      "origin": [
+        0.41336262433432586,
+        1.5107990385214334,
+        -2.7297204648145694
+      ],
+      "pivot": [
+        0.41336262433432586,
+        2.0407990385214334,
+        -2.4697204648145696
+      ],
+      "pivotOffset": [
+        0,
+        0.53,
+        0.26
+      ],
+      "pivotSource": "offset",
+      "axis": [
+        1,
+        0,
+        0
+      ],
+      "spinAxis": [
+        1,
+        0,
+        0
+      ],
+      "anchor": [
+        0.41086343746155735,
+        2.184515939807854,
+        -2.630251513179629
+      ],
+      "openAngle": 68,
+      "closeAngle": 0,
+      "lambda": 8,
+      "spinSpeed": 5.5,
+      "defaultState": "closed",
+      "interactions": [
+        "hinge_open_close"
+      ],
+      "visibleInUI": true,
+      "animationEnabled": true,
+      "material": null
+    },
+    {
+      "id": "auto_door_front_right_TOYOTA_FORTUNER_FL_DOOR_DMTAB_DATAB_DMTBB_DATBB_PMTAB_PATAB_MES_plastic_1_0",
+      "typeKey": "door.front.right",
+      "label": "Front Right Door",
+      "rootName": "TOYOTA_FORTUNER_FL_DOOR_DMTAB_DATAB_DMTBB_DATBB_PMTAB_PATAB_MES_plastic_1_0",
+      "nodePath": "AuxScene > Scene > TOYOTA_FORTUNER_FL_DOOR_DMTAB_DATAB_DMTBB_DATBB_PMTAB_PATAB_MES_plastic_1_0",
+      "meshNames": [
+        "TOYOTA_FORTUNER_FL_DOOR_DMTAB_DATAB_DMTBB_DATBB_PMTAB_PATAB_MES_plastic_1_0"
+      ],
+      "origin": [
+        1.4462176343901176,
+        1.109177402600749,
+        1.0502074996200672
+      ],
+      "pivot": [
+        1.4462176343901176,
+        1.109177402600749,
+        1.0502074996200672
+      ],
+      "pivotOffset": [
+        0,
+        0,
+        0
+      ],
+      "pivotSource": "origin",
+      "axis": [
+        0,
+        -1,
+        0
+      ],
+      "spinAxis": [
+        0,
+        -1,
+        0
+      ],
+      "anchor": [
+        1.4462176343901176,
+        1.6200279463662697,
+        1.0502074996200672
+      ],
+      "openAngle": 65,
+      "closeAngle": 0,
+      "lambda": 8,
+      "spinSpeed": 5.5,
+      "defaultState": "closed",
+      "interactions": [
+        "hinge_open_close"
+      ],
+      "visibleInUI": true,
+      "animationEnabled": true,
+      "material": null
+    },
+    {
+      "id": "auto_wheel_rear_left_Object087_tire_0",
+      "typeKey": "wheel.rear.left",
+      "label": "Rear Left Wheel",
+      "rootName": "Object087_tire_0",
+      "nodePath": "AuxScene > Scene > Object087_tire_0",
+      "meshNames": [
+        "Object087_tire_0"
+      ],
+      "origin": [
+        0.4108154164143956,
+        0.001432604129489218,
+        0.3193961736454254
+      ],
+      "pivot": [
+        -0.5604925801517016,
+        0.4757547195365408,
+        -1.6927703503477627
+      ],
+      "pivotOffset": [
+        -0.9713079965660971,
+        0.4743221154070516,
+        -2.012166523993188
+      ],
+      "pivotSource": "origin",
+      "axis": [
+        1,
+        0,
+        0
+      ],
+      "spinAxis": [
+        1,
+        0,
+        0
+      ],
+      "anchor": [
+        -0.593314572782749,
+        0.6693195634114057,
+        -1.6927703503477627
+      ],
+      "openAngle": 0,
+      "closeAngle": 0,
+      "lambda": 8,
+      "spinSpeed": 5.5,
+      "defaultState": "off",
+      "interactions": [
+        "spin"
+      ],
+      "visibleInUI": true,
+      "animationEnabled": true,
+      "material": null
+    },
+    {
+      "id": "auto_rim_front_right_Object102_rim_0003",
+      "typeKey": "rim.front.right",
+      "label": "Front Right Rim",
+      "rootName": "Object102_rim_0003",
+      "nodePath": "AuxScene > Scene > Object102_rim_0003",
+      "meshNames": [
+        "Object102_rim_0003"
+      ],
+      "origin": [
+        0.4108154164143956,
+        0.001432604129489218,
+        0.3193961736454254
+      ],
+      "pivot": [
+        1.4393173266293229,
+        0.4732609919787002,
+        1.679162009234853
+      ],
+      "pivotOffset": [
+        1.0285019102149273,
+        0.471828387849211,
+        1.3597658355894275
+      ],
+      "pivotSource": "origin",
+      "axis": [
+        1,
+        0,
+        0
+      ],
+      "spinAxis": [
+        1,
+        0,
+        0
+      ],
+      "anchor": [
+        1.4714385838432924,
+        0.561032889956646,
+        1.7817508635737491
+      ],
+      "openAngle": 0,
+      "closeAngle": 0,
+      "lambda": 8,
+      "spinSpeed": 5.5,
+      "defaultState": "off",
+      "interactions": [
+        "spin"
+      ],
+      "visibleInUI": true,
+      "animationEnabled": true,
+      "material": null
+    },
+    {
+      "id": "auto_rim_front_right_Object098_rim_0",
+      "typeKey": "rim.front.right",
+      "label": "Front Right Rim",
+      "rootName": "Object098_rim_0",
+      "nodePath": "AuxScene > Scene > Object098_rim_0",
+      "meshNames": [
+        "Object098_rim_0"
+      ],
+      "origin": [
+        1.4096522082353604,
+        0.48118061280474006,
+        1.5711882492513447
+      ],
+      "pivot": [
+        1.4096522082353604,
+        0.48118061280474006,
+        1.5711882492513447
+      ],
+      "pivotOffset": [
+        0,
+        0,
+        0
+      ],
+      "pivotSource": "origin",
+      "axis": [
+        1,
+        0,
+        0
+      ],
+      "spinAxis": [
+        1,
+        0,
+        0
+      ],
+      "anchor": [
+        1.4096522082353604,
+        0.633740769002271,
+        1.5711882492513447
+      ],
+      "openAngle": 0,
+      "closeAngle": 0,
+      "lambda": 8,
+      "spinSpeed": 5.5,
+      "defaultState": "off",
+      "interactions": [
+        "spin"
+      ],
+      "visibleInUI": true,
+      "animationEnabled": true,
+      "material": null
+    },
+    {
+      "id": "auto_rim_front_left_Object009_rim_0",
+      "typeKey": "rim.front.left",
+      "label": "Front Left Rim",
+      "rootName": "Object009_rim_0",
+      "nodePath": "AuxScene > Scene > Object009_rim_0",
+      "meshNames": [
+        "Object009_rim_0"
+      ],
+      "origin": [
+        -0.5889200509273105,
+        0.4811597646891967,
+        1.9215250807395268
+      ],
+      "pivot": [
+        -0.5889200509273105,
+        0.4811597646891967,
+        1.9215250807395268
+      ],
+      "pivotOffset": [
+        0,
+        0,
+        0
+      ],
+      "pivotSource": "origin",
+      "axis": [
+        1,
+        0,
+        0
+      ],
+      "spinAxis": [
+        1,
+        0,
+        0
+      ],
+      "anchor": [
+        -0.5889200509273105,
+        0.6337192741386177,
+        1.9215250807395268
+      ],
+      "openAngle": 0,
+      "closeAngle": 0,
+      "lambda": 8,
+      "spinSpeed": 5.5,
+      "defaultState": "off",
+      "interactions": [
+        "spin"
+      ],
+      "visibleInUI": true,
+      "animationEnabled": true,
+      "material": null
+    },
+    {
+      "id": "auto_bonnet_front_backBonnet001",
+      "typeKey": "bonnet.front",
+      "label": "Bonnet / Hood",
+      "rootName": "backBonnet001",
+      "nodePath": "AuxScene > Scene > backBonnet001",
+      "meshNames": [
+        "backBonnet001"
+      ],
+      "origin": [
+        0.41086361817058814,
+        2.0987426037378896,
+        -2.5261153336012985
+      ],
+      "pivot": [
+        0.41086361817058814,
+        2.0987426037378896,
+        -2.5261153336012985
+      ],
+      "pivotOffset": [
+        0,
+        0,
+        0
+      ],
+      "pivotSource": "origin",
+      "axis": [
+        1,
+        0,
+        0
+      ],
+      "spinAxis": [
+        1,
+        0,
+        0
+      ],
+      "anchor": [
+        0.4108636181705882,
+        2.1911331726750904,
+        -2.5261153336012985
+      ],
+      "openAngle": -65,
+      "closeAngle": 0,
+      "lambda": 8,
+      "spinSpeed": 5.5,
+      "defaultState": "closed",
+      "interactions": [
+        "hinge_open_close"
+      ],
+      "visibleInUI": true,
+      "animationEnabled": true,
+      "material": null
+    }
+  ],
+  "materials": [],
+  "assetManifest": null,
+  "lighting": {
+    "intensity": 1,
+    "ambient": {
+      "enabled": true,
+      "color": "#ffffff",
+      "intensity": 0.68
+    },
+    "lights": [
+      {
+        "type": "directional",
+        "position": [
+          4.5,
+          6.5,
+          -4.5
+        ],
+        "intensity": 3.6,
+        "color": "#ffffff",
+        "castShadow": true,
+        "mapSize": 2048
+      },
+      {
+        "type": "directional",
+        "position": [
+          -5,
+          3.5,
+          4
+        ],
+        "intensity": 1.4,
+        "color": "#cfe1ff"
+      },
+      {
+        "type": "directional",
+        "position": [
+          0,
+          4.5,
+          6
+        ],
+        "intensity": 1.7,
+        "color": "#ffffff"
+      }
+    ]
+  },
+  "environment": {
+    "preset": "studio",
+    "background": false,
+    "backgroundColor": "#0b0e14"
+  },
+  "camera": {
+    "fov": 52,
+    "position": [
+      5,
+      3,
+      -7
+    ],
+    "frame": {
+      "selectedMode": "rearAngle",
+      "mobileDistanceMultiplier": 1.4,
+      "editorPreviewDevice": "mobile",
+      "editorPanEnabled": true,
+      "presets": {
+        "auto": {
+          "offset": [
+            0,
+            0,
+            0
+          ],
+          "targetOffset": [
+            0,
+            0,
+            0
+          ],
+          "distanceScale": 1
+        },
+        "cockpit": {
+          "offset": [
+            -0.5,
+            -0.1,
+            -4
+          ],
+          "targetOffset": [
+            0.35,
+            -1.1,
+            1.45
+          ],
+          "distanceScale": 1
+        },
+        "top": {
+          "offset": [
+            1.45,
+            -0.4,
+            -0.35
+          ],
+          "targetOffset": [
+            1.85,
+            -1.35,
+            -0.5
+          ],
+          "distanceScale": 1
+        },
+        "side": {
+          "offset": [
+            0,
+            0,
+            0
+          ],
+          "targetOffset": [
+            0,
+            -2,
+            0
+          ],
+          "distanceScale": 1
+        },
+        "back": {
+          "offset": [
+            0,
+            0,
+            0
+          ],
+          "targetOffset": [
+            0.35,
+            -3.05,
+            1.9
+          ],
+          "distanceScale": 1
+        },
+        "frontAngle": {
+          "offset": [
+            0,
+            0,
+            0
+          ],
+          "targetOffset": [
+            0.6,
+            -2.05,
+            0
+          ],
+          "distanceScale": 1
+        },
+        "rearAngle": {
+          "offset": [
+            0,
+            0,
+            0
+          ],
+          "targetOffset": [
+            0.9,
+            -2.05,
+            -0.05
+          ],
+          "distanceScale": 1
+        }
+      }
+    },
+    "autoFit": true
+  },
+  "stage": {
+    "backgroundColor": "#0b0e14",
+    "shadows": true,
+    "radialFloorEnabled": true,
+    "radialFloorColor": "#7a8cb3",
+    "radialFloorOpacity": 0.5,
+    "radialFloorInner": 0.14,
+    "radialFloorOuter": 1.12,
+    "shadowOpacity": 0.62,
+    "shadowCatcherOpacity": 0.32,
+    "shadowBlur": 2.2,
+    "shadowFar": 8.5,
+    "shadowScale": 11,
+    "shadowResolution": 1024,
+    "shadowColor": "#0d1322",
+    "environmentIntensity": 1.55,
+    "backgroundIntensity": 1
+  },
+  "animation": {
+    "autoRotate": false,
+    "rotateSpeed": 0.4
+  },
+  "fog": {
+    "enabled": false,
+    "color": "#0b0e14",
+    "near": 8,
+    "far": 34
+  },
+  "postprocessing": {
+    "enabled": true,
+    "glare": 0.45,
+    "grain": 0.09,
+    "vignette": 0.32,
+    "exposure": 1.4,
+    "contrast": 1.15,
+    "saturation": 1.4,
+    "bloomThreshold": 0.72,
+    "bloomIntensity": 0.3,
+    "sharpness": 0.04,
+    "chromaticAberration": 0.0004
+  },
+  "performance": {
+    "preset": "high"
+  },
+  "branding": {
+    "watermark": true,
+    "text": "made in AutoZ"
+  },
+  "publishedAt": "2026-05-27T19:32:35.522Z"
+}

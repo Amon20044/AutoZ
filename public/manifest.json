@@ -1,11 +1,11 @@
 {
-  "name": "R3F Next Starter",
-  "short_name": "R3F Next Starter",
+  "name": "AutoZ Engine",
+  "short_name": "AutoZ",
   "icons": [
     {
       "src": "/icons/apple-touch-icon.png",
       "sizes": "64x64 32x32 24x24 16x16",
-      "type": "image/x-icon",
+      "type": "image/png",
       "purpose": "any maskable"
     },
     {
@@ -24,6 +24,6 @@
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
-  "theme_color": "#000000",
-  "background_color": "#ffffff"
+  "theme_color": "#04060f",
+  "background_color": "#04060f"
 }

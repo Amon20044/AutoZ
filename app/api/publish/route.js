@@ -35,6 +35,7 @@ import { s3Client, MODELS_BUCKET } from '@/config/s3'
 import { uploadBufferToImgBB } from '@/config/imgbb'
 import prisma from '@/config/prisma'
 import { normalizePublishId, resolvePublishId } from '@/lib/publish-ids'
+import { getPlatformTestKey, verifyTestKey } from '@/lib/demo-auth'
 
 const CACHE_CONTROL_IMMUTABLE = 'public, max-age=31536000, immutable'
 const MULTIPART_THRESHOLD_BYTES = 6 * 1024 * 1024
@@ -57,6 +58,16 @@ export async function POST(request) {
   try {
     if (!prisma) {
       return NextResponse.json({ error: 'Database is not configured on this deployment.' }, { status: 500 })
+    }
+
+    // Tester key gate — only enforced when PLATFORM_TEST_KEY is configured.
+    // This lets dev/preview deployments publish without a key while keeping
+    // prod locked behind a tester-provisioned credential.
+    if (getPlatformTestKey()) {
+      const result = verifyTestKey(request.headers.get('x-test-key'))
+      if (!result.ok) {
+        return NextResponse.json({ error: result.reason, code: 'TEST_KEY_REQUIRED' }, { status: 401 })
+      }
     }
 
     const formData = await request.formData()

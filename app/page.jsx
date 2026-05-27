@@ -1,6 +1,7 @@
 'use client'
 
 import Link from 'next/link'
+import { useEffect, useState } from 'react'
 import {
   ArrowRight,
   Boxes,
@@ -77,6 +78,22 @@ const PRICING = [
 ]
 
 export default function LandingPage() {
+  const [demoReady, setDemoReady] = useState(false)
+
+  useEffect(() => {
+    const handler = (event) => {
+      if (event.data?.type === 'autoz:ready') setDemoReady(true)
+    }
+    window.addEventListener('message', handler)
+    // Safety net: if the iframe never posts (older slug, blocked, etc.), reveal
+    // after the max realistic warm-up window so the overlay never sticks.
+    const fallback = window.setTimeout(() => setDemoReady(true), 12000)
+    return () => {
+      window.removeEventListener('message', handler)
+      window.clearTimeout(fallback)
+    }
+  }, [])
+
   return (
     <main className='landing-root landing-v2'>
       <nav className='landing-nav'>
@@ -93,12 +110,27 @@ export default function LandingPage() {
       </nav>
 
       <section className='landing-hero-v2'>
-        <iframe
-          src='https://auto-z-omega.vercel.app/frame/az-d5241d1a69'
-          title='AutoZ live car viewer'
-          allow='accelerometer; ambient-light-sensor; encrypted-media; gyroscope; xr-spatial-tracking'
-          allowFullScreen
-        />
+        <div className={`demo-frame-wrap ${demoReady ? 'is-ready' : ''}`} aria-label='Interactive 3D car demo'>
+          <iframe
+            src='/frame/demo'
+            title='AutoZ live car viewer'
+            allow='accelerometer; ambient-light-sensor; encrypted-media; gyroscope; xr-spatial-tracking'
+            allowFullScreen
+          />
+          <div className='demo-frame-overlay' aria-hidden={demoReady}>
+            <div className='demo-frame-sheen' />
+            <div className='demo-frame-glow' />
+            <div className='demo-frame-spinner' />
+            <div className='demo-frame-copy'>
+              <strong>Spinning up the demo</strong>
+              <span>Streaming the optimized GLB · ~29 MB on first visit</span>
+            </div>
+          </div>
+          <div className='demo-frame-badge' aria-hidden='true'>
+            <span className='demo-frame-badge-dot' />
+            Live demo · no backend
+          </div>
+        </div>
         <div className='landing-hero-copy'>
           <div className='landing-kicker'>Config-driven 3D automotive SaaS</div>
           <h1>Publish premium car viewers without custom Three.js work.</h1>

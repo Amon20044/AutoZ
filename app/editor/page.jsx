@@ -10,6 +10,7 @@ import ModelUploader from '@/components/dom/ModelUploader'
 import ProcessingLog from '@/components/dom/ProcessingLog'
 import PartDetectionPanel from '@/components/dom/PartDetectionPanel'
 import EditorSettingsPanel from '@/components/dom/EditorSettingsPanel'
+import TestKeyModal, { readStoredTestKey, writeStoredTestKey } from '@/components/dom/TestKeyModal'
 import { runImportPipeline } from '@/engine/pipeline/import-pipeline'
 import { InteractionEngine } from '@/engine/core/interaction-engine'
 import { fetchModelBlob, normalizeStorageUrl } from '@/lib/model/chunked-model'
@@ -113,14 +114,81 @@ const isTextureFile = (file) => {
   return Boolean(ext && TEXTURE_EXTENSIONS.has(ext))
 }
 
-// Large model workaround: one Vercel-safe request per 3 MB file slice,
-// followed by a small manifest.json that the frame viewer can rehydrate.
+// Upload routing thresholds.
+//  - ≤ MODEL_INLINE_LIMIT     → POST inline via FormData to /api/publish.
+//  - ≤ MODEL_CHUNK_THRESHOLD  → presigned PUT direct to Supabase Storage (no
+//                               manifest, single object, single request).
+//  - > MODEL_CHUNK_THRESHOLD  → chunked manifest (one Vercel-safe POST per
+//                               slice + a tiny manifest.json the frame
+//                               viewer rehydrates).
+const MODEL_INLINE_LIMIT = 3 * 1024 * 1024
+const MODEL_CHUNK_THRESHOLD = 40 * 1024 * 1024
 const LARGE_MODEL_CHUNK_SIZE = 3 * 1024 * 1024
 const LARGE_MODEL_UPLOAD_CONCURRENCY = 4
 
 function createUploadId() {
   const cryptoObj = typeof window !== 'undefined' ? window.crypto : null
   return cryptoObj?.randomUUID?.() || `upload-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 9)}`
+}
+
+async function uploadPresignedModel(file, slug, onProgress) {
+  const emit = (phase, percent, statusText) => {
+    onProgress?.({
+      phase,
+      fileName: file.name,
+      totalBytes: file.size,
+      uploadedBytes: phase === 'done' ? file.size : Math.round((percent / 100) * file.size),
+      percent,
+      totalParts: 1,
+      completedParts: phase === 'done' ? 1 : 0,
+      currentPart: 0,
+      statusText: statusText ?? '',
+      parts: [{ index: 0, size: file.size, uploaded: phase === 'done' ? file.size : 0, percent, status: phase === 'done' ? 'done' : 'running' }],
+    })
+  }
+
+  emit('preparing', 0, 'Requesting upload URL')
+
+  const presignRes = await fetch('/api/publish/upload-url', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      slug,
+      fileName: file.name,
+      contentType: file.type || 'model/gltf-binary',
+    }),
+  })
+  const presignJson = await presignRes.json()
+  if (!presignRes.ok) throw new Error(presignJson.error || 'Could not get a presigned upload URL.')
+
+  emit('uploading', 1, 'Streaming to Supabase Storage')
+
+  await new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest()
+    xhr.open(presignJson.method || 'PUT', presignJson.uploadUrl, true)
+    xhr.setRequestHeader('Content-Type', file.type || 'model/gltf-binary')
+    xhr.upload.addEventListener('progress', (event) => {
+      if (event.lengthComputable) {
+        const percent = Math.max(1, Math.round((event.loaded / event.total) * 100))
+        emit('uploading', percent, 'Streaming to Supabase Storage')
+      }
+    })
+    xhr.addEventListener('load', () => {
+      if (xhr.status >= 200 && xhr.status < 300) resolve()
+      else reject(new Error(`Direct upload failed (HTTP ${xhr.status}).`))
+    })
+    xhr.addEventListener('error', () => reject(new Error('Network error during direct upload.')))
+    xhr.addEventListener('abort', () => reject(new Error('Upload was aborted.')))
+    xhr.send(file)
+  })
+
+  emit('done', 100, 'Upload complete')
+
+  return {
+    publicUrl: presignJson.publicUrl,
+    key: presignJson.key,
+    path: presignJson.path,
+  }
 }
 
 function uploadModelPart({ file, slug, uploadId, partIndex, totalParts, start, end, onProgress }) {
@@ -391,6 +459,12 @@ export default function EditorPage({ initialPublishId = '' }) {
   const [toast, setToast] = useState(null)
   const [showPartLabels, setShowPartLabels] = useState(false)
   const [, setPartRevision] = useState(0)
+  const [testKey, setTestKey] = useState('')
+  const [testKeyModal, setTestKeyModal] = useState(null) // { error, submitting } | null
+
+  useEffect(() => {
+    setTestKey(readStoredTestKey())
+  }, [])
 
   const interactionRef = useRef(new InteractionEngine())
   const modelFileRef = useRef(null) // Store the original file for publish upload
@@ -639,8 +713,10 @@ export default function EditorPage({ initialPublishId = '' }) {
   // Larger files: uploaded as 3 MB objects + manifest.json, then the
   // publish API receives model metadata instead of the full file.
 
-  const handlePublish = useCallback(async () => {
+  const handlePublish = useCallback(async (overrideKey) => {
     if (!importResult || !modelFileRef.current) return
+
+    const effectiveKey = typeof overrideKey === 'string' ? overrideKey : testKey
 
     setIsPublishing(true)
     setError(null)
@@ -668,11 +744,18 @@ export default function EditorPage({ initialPublishId = '' }) {
       })
       const modelFile = optimized.file
       const modelPath = optimized.optimized ? modelFile.name : (modelEntryRef.current?.path || modelFile.name)
-      const isLargeFile = modelFile.size > LARGE_MODEL_CHUNK_SIZE
+
+      // Three-tier upload routing:
+      //   ≤ 3 MB   → inline via FormData below (no out-of-band upload)
+      //   ≤ 40 MB  → presigned PUT direct to Storage (single object, no manifest)
+      //   > 40 MB  → chunked manifest workaround for serverless body limits
+      const useInlineUpload = modelFile.size <= MODEL_INLINE_LIMIT
+      const useChunkedUpload = modelFile.size > MODEL_CHUNK_THRESHOLD
+      const usePresignedUpload = !useInlineUpload && !useChunkedUpload
 
       let modelUploadMeta = null
 
-      if (isLargeFile) {
+      if (useChunkedUpload) {
         const uploadResult = await uploadChunkedModel(modelFile, activePublishId, uploadId, setUploadProgress)
         if (!uploadResult?.publicUrl) throw new Error('Upload proxy returned no URL.')
 
@@ -683,6 +766,17 @@ export default function EditorPage({ initialPublishId = '' }) {
           modelFileSize: String(modelFile.size),
           modelIsChunked: 'true',
           modelManifest: JSON.stringify(uploadResult.manifest ?? {}),
+        }
+      } else if (usePresignedUpload) {
+        const uploadResult = await uploadPresignedModel(modelFile, activePublishId, setUploadProgress)
+        if (!uploadResult?.publicUrl) throw new Error('Presigned upload returned no URL.')
+
+        modelUploadMeta = {
+          modelUrl: uploadResult.publicUrl,
+          modelKey: uploadResult.key,
+          modelFileName: modelFile.name,
+          modelFileSize: String(modelFile.size),
+          modelIsChunked: 'false',
         }
       }
 
@@ -719,16 +813,19 @@ export default function EditorPage({ initialPublishId = '' }) {
 
       const formData = new FormData()
 
-      if (isLargeFile && modelUploadMeta) {
-        // Large file path: model already on S3 — send metadata only
+      if (modelUploadMeta) {
+        // Model is already on Storage (presigned PUT or chunked manifest).
+        // Send only the reference + flag so the publish API skips re-upload.
         formData.append('modelUrl', modelUploadMeta.modelUrl)
         formData.append('modelKey', modelUploadMeta.modelKey)
         formData.append('modelFileName', modelUploadMeta.modelFileName)
         formData.append('modelFileSize', modelUploadMeta.modelFileSize)
         formData.append('modelIsChunked', modelUploadMeta.modelIsChunked)
-        formData.append('modelManifest', modelUploadMeta.modelManifest)
+        if (modelUploadMeta.modelManifest) {
+          formData.append('modelManifest', modelUploadMeta.modelManifest)
+        }
       } else {
-        // Small file path: send file directly via formData
+        // Tiny file path: stream the bytes inline.
         formData.append('model', modelFile)
         formData.append('modelPath', modelPath)
       }
@@ -745,11 +842,32 @@ export default function EditorPage({ initialPublishId = '' }) {
         if (isTextureFile(entry.file)) formData.append('textures', entry.file)
       })
 
-      const res = await fetch('/api/publish', { method: 'POST', body: formData })
+      const publishHeaders = {}
+      if (effectiveKey) publishHeaders['x-test-key'] = effectiveKey
+      const res = await fetch('/api/publish', {
+        method: 'POST',
+        headers: publishHeaders,
+        body: formData,
+      })
       const json = await res.json()
 
-      if (!res.ok) throw new Error(json.error || 'Publish failed')
+      if (!res.ok) {
+        if (res.status === 401 && json.code === 'TEST_KEY_REQUIRED') {
+          // Test-key gate: surface the modal and abort the publish cleanly.
+          // Saved upload progress stays visible so the user knows nothing was lost.
+          failPublishProgress()
+          setTestKeyModal({ error: json.error || 'A tester key is required to publish.', submitting: false })
+          setIsPublishing(false)
+          return
+        }
+        throw new Error(json.error || 'Publish failed')
+      }
 
+      if (effectiveKey) {
+        writeStoredTestKey(effectiveKey)
+        setTestKey(effectiveKey)
+      }
+      setTestKeyModal(null)
       finishPublishProgress()
       setPublishId(json.slug)
       setIsEditingExistingPublish(true)
@@ -767,10 +885,12 @@ export default function EditorPage({ initialPublishId = '' }) {
       failPublishProgress()
       setUploadProgress((prev) => prev ? { ...prev, phase: 'error', statusText: err.message } : prev)
       setError(err.message)
+      // Non-auth failure — close the test-key modal so the user sees the real error.
+      setTestKeyModal(null)
     } finally {
       setIsPublishing(false)
     }
-  }, [clearPublishTimers, failPublishProgress, finishPublishProgress, importResult, isEditingExistingPublish, publishId, requestPublishId, router, sceneConfig])
+  }, [clearPublishTimers, failPublishProgress, finishPublishProgress, importResult, isEditingExistingPublish, publishId, requestPublishId, router, sceneConfig, testKey])
 
   const handleReset = useCallback(() => {
     if (importResult?._blobUrls) {
@@ -1028,6 +1148,19 @@ export default function EditorPage({ initialPublishId = '' }) {
           </div>
         </div>
       )}
+
+      <TestKeyModal
+        open={Boolean(testKeyModal)}
+        initialKey={testKey}
+        error={testKeyModal?.error ?? null}
+        submitting={Boolean(testKeyModal?.submitting)}
+        onCancel={() => setTestKeyModal(null)}
+        onSubmit={(nextKey) => {
+          setTestKey(nextKey)
+          setTestKeyModal({ error: null, submitting: true })
+          handlePublish(nextKey)
+        }}
+      />
 
       {/* Simple toast */}
       {toast && (

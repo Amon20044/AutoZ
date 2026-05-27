@@ -1,9 +1,31 @@
 import { Layout } from '@/components/dom/Layout'
 import '@/global.css'
 
+const SITE_URL = process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000'
+
 export const metadata = {
+  metadataBase: new URL(SITE_URL),
   title: 'AutoZ Engine — Interactive 3D Automotive Experiences, Instantly',
   description: 'Upload a vehicle model, configure doors, lights, colors and camera, then publish an interactive 3D experience as an iframe. No custom viewer engineering required.',
+  manifest: '/manifest.json',
+  icons: {
+    icon: '/icons/favicon-32x32.png',
+    apple: '/icons/apple-touch-icon.png',
+  },
+  openGraph: {
+    title: 'AutoZ Engine — Interactive 3D Automotive Experiences, Instantly',
+    description: 'Upload a vehicle model, configure doors, lights, colors and camera, then publish an interactive 3D experience as an iframe.',
+    images: ['/icons/share.png'],
+    type: 'website',
+  },
+  twitter: { card: 'summary_large_image' },
+}
+
+export const viewport = {
+  themeColor: '#04060f',
+  width: 'device-width',
+  initialScale: 1,
+  minimumScale: 1,
 }
 
 export default function RootLayout({ children }) {

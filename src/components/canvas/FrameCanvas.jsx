@@ -63,23 +63,48 @@ export default function FrameCanvas({ snapshot }) {
 
   const handleRuntimeReady = useCallback((nextRuntime) => {
     setRuntime(nextRuntime)
-    setModelReady(Boolean(nextRuntime?.engine && nextRuntime?.registry))
+    const ready = Boolean(nextRuntime?.engine && nextRuntime?.registry)
+    setModelReady(ready)
     setFrameInfo(nextRuntime?.engine?.getFrameInfo?.() ?? null)
     const savedSpeed = nextRuntime?.registry?.wheelSpinParts?.find((part) => Number.isFinite(part.spinSpeed))?.spinSpeed
     if (Number.isFinite(savedSpeed)) setWheelSpeed(savedSpeed)
-  }, [])
+    // Signal the embedding parent (landing page, customer iframe, etc.) so it
+    // can fade its own loader. Safe no-op when not iframed.
+    if (ready && typeof window !== 'undefined' && window.parent !== window) {
+      try {
+        window.parent.postMessage({ type: 'autoz:ready', slug: snapshot?.slug ?? null }, '*')
+      } catch { /* cross-origin parents are fine — they just won't get the signal */ }
+    }
+  }, [snapshot?.slug])
 
+  // Reset toggle state whenever the engine instance changes (HMR, slug swap,
+  // re-publish). Without this, lightsOn/wheelsOn can survive across engines
+  // and the UI lies about what the scene is actually doing.
+  useEffect(() => {
+    setLightsOn(false)
+    setWheelsOn(false)
+  }, [runtime.engine])
+
+  // Engine methods (toggleHeadlights / setWheelSpin) return the *new state*,
+  // which means a successful "turn off" returns `false`. We can't use that as
+  // a success signal — instead, check up-front whether the operation is even
+  // possible (engine present + parts exist), then drive React state with the
+  // boolean we already know we want.
   const toggleLights = useCallback(() => {
+    const engine = runtime.engine
+    if (!engine || lightCount === 0) return
     const next = !lightsOn
-    const applied = runtime.engine?.toggleHeadlights(next)
-    if (applied !== false) setLightsOn(next)
-  }, [lightsOn, runtime.engine])
+    engine.toggleHeadlights(next)
+    setLightsOn(next)
+  }, [lightCount, lightsOn, runtime.engine])
 
   const toggleWheels = useCallback(() => {
+    const engine = runtime.engine
+    if (!engine || wheelCount === 0) return
     const next = !wheelsOn
-    const applied = runtime.engine?.setWheelSpin(next, wheelSpeed)
-    if (applied !== false) setWheelsOn(next)
-  }, [runtime.engine, wheelSpeed, wheelsOn])
+    engine.setWheelSpin(next, wheelSpeed)
+    setWheelsOn(next)
+  }, [runtime.engine, wheelCount, wheelSpeed, wheelsOn])
 
   const handleWheelSpeedChange = useCallback((value) => {
     setWheelSpeed(value)
