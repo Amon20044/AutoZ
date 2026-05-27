@@ -1424,7 +1424,7 @@
     "frame": {
       "selectedMode": "auto",
       "mobileDistanceMultiplier": 1.4,
-      "editorPreviewDevice": "mobile",
+      "editorPreviewDevice": "desktop",
       "editorPanEnabled": true,
       "presets": {
         "auto": {
@@ -1570,5 +1570,5 @@
     "watermark": true,
     "text": "made in AutoZ"
   },
-  "publishedAt": "2026-05-27T20:17:56.142Z"
+  "publishedAt": "2026-05-27T20:18:33.388Z"
 }
