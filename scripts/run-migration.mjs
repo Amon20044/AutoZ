@@ -23,7 +23,12 @@ const getEnv = (key) => {
   return match[1].trim()
 }
 
-const DATABASE_URL = getEnv('DATABASE_URL').replace('?pgbouncer=true', '')
+const getOptionalEnv = (key) => {
+  const match = envContent.match(new RegExp(`^${key}=["']?([^"'\r\n]+)["']?`, 'm'))
+  return match?.[1]?.trim() || null
+}
+
+const DATABASE_URL = (getOptionalEnv('DIRECT_URL') || getEnv('DATABASE_URL')).replace('?pgbouncer=true', '')
 
 console.log(`Connecting to: ${DATABASE_URL.replace(/:([^:@]+)@/, ':***@')}`)
 
