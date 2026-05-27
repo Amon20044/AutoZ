@@ -126,10 +126,6 @@ export default function LandingPage() {
               <span>Streaming the optimized GLB · ~29 MB on first visit</span>
             </div>
           </div>
-          <div className='demo-frame-badge' aria-hidden='true'>
-            <span className='demo-frame-badge-dot' />
-            Live demo · no backend
-          </div>
         </div>
         <div className='landing-hero-copy'>
           <div className='landing-kicker'>Config-driven 3D automotive SaaS</div>
