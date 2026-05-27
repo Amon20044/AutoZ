@@ -18,6 +18,19 @@ import { dampVec3, stableDelta } from '@/engine/math/animation'
 
 installThreeConsoleFilter()
 
+function attachContextRecovery(renderer, label) {
+  const canvas = renderer?.domElement
+  if (!canvas) return
+  canvas.addEventListener('webglcontextlost', (event) => {
+    event.preventDefault()
+    console.warn(`[${label}] WebGL context lost — waiting for restore`)
+  }, false)
+  canvas.addEventListener('webglcontextrestored', () => {
+    console.log(`[${label}] WebGL context restored`)
+    try { renderer.forceContextRestore?.() } catch { /* ignore */ }
+  }, false)
+}
+
 /**
  * Full 3D viewport canvas: assembles the studio scene.
  * Responds to sceneConfig changes from the right-side settings panel.
@@ -97,9 +110,12 @@ export default function CarViewer({
           toneMapping: THREE.AgXToneMapping,
           toneMappingExposure: post.exposure ?? 1.1,
           outputColorSpace: THREE.SRGBColorSpace,
+          preserveDrawingBuffer: false,
+          failIfMajorPerformanceCaveat: false,
         }}
         dpr={[1, 2]}
         style={{ background: backgroundColor }}
+        onCreated={({ gl }) => attachContextRecovery(gl, 'CarViewer')}
       >
         <PerspectiveCamera
           makeDefault

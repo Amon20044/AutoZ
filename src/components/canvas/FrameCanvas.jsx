@@ -26,6 +26,19 @@ import { dampVec3, stableDelta } from '@/engine/math/animation'
 
 installThreeConsoleFilter()
 
+function attachContextRecovery(renderer, label) {
+  const canvas = renderer?.domElement
+  if (!canvas) return
+  canvas.addEventListener('webglcontextlost', (event) => {
+    event.preventDefault()
+    console.warn(`[${label}] WebGL context lost — waiting for restore`)
+  }, false)
+  canvas.addEventListener('webglcontextrestored', () => {
+    console.log(`[${label}] WebGL context restored`)
+    try { renderer.forceContextRestore?.() } catch { /* ignore */ }
+  }, false)
+}
+
 /**
  * Lightweight frame viewer canvas with grouped runtime controls.
  * @param {{ snapshot: object }} props
@@ -120,9 +133,13 @@ export default function FrameCanvas({ snapshot }) {
           toneMapping: THREE.AgXToneMapping,
           toneMappingExposure: post.exposure ?? 1.1,
           outputColorSpace: THREE.SRGBColorSpace,
+          powerPreference: 'high-performance',
+          preserveDrawingBuffer: false,
+          failIfMajorPerformanceCaveat: false,
         }}
         dpr={[1, 2]}
         style={{ background: backgroundColor, width: '100%', height: '100%' }}
+        onCreated={({ gl }) => attachContextRecovery(gl, 'FrameCanvas')}
       >
         <PerspectiveCamera
           makeDefault

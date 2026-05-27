@@ -586,13 +586,17 @@
         1.3215655633668073,
         2.3576306030451843
       ],
-      "pivot": null,
+      "pivot": [
+        -0.41072127789217167,
+        1.3215655633668073,
+        2.3576306030451843
+      ],
       "pivotOffset": [
         0,
         0,
         0
       ],
-      "pivotSource": null,
+      "pivotSource": "offset",
       "axis": null,
       "spinAxis": null,
       "anchor": [
@@ -626,13 +630,17 @@
         1.3215652970587621,
         2.3576306030451843
       ],
-      "pivot": null,
+      "pivot": [
+        1.2324530414701174,
+        1.3215652970587621,
+        2.3576306030451843
+      ],
       "pivotOffset": [
         0,
         0,
         0
       ],
-      "pivotSource": null,
+      "pivotSource": "offset",
       "axis": null,
       "spinAxis": null,
       "anchor": [
@@ -718,13 +726,17 @@
         1.8227627828876232,
         0.9406835795270897
       ],
-      "pivot": null,
+      "pivot": [
+        0.41081295247053934,
+        1.8227627828876232,
+        0.9406835795270897
+      ],
       "pivotOffset": [
         0,
         0,
         0
       ],
-      "pivotSource": null,
+      "pivotSource": "offset",
       "axis": null,
       "spinAxis": null,
       "anchor": [
@@ -810,13 +822,17 @@
         0.8299749120067493,
         2.7229046527921357
       ],
-      "pivot": null,
+      "pivot": [
+        0.4107683801042044,
+        0.8299749120067493,
+        2.7229046527921357
+      ],
       "pivotOffset": [
         0,
         0,
         0
       ],
-      "pivotSource": null,
+      "pivotSource": "offset",
       "axis": null,
       "spinAxis": null,
       "anchor": [
@@ -850,13 +866,17 @@
         0.9668952532340956,
         -2.5364226723611614
       ],
-      "pivot": null,
+      "pivot": [
+        0.4134634329265533,
+        0.9668952532340956,
+        -2.5364226723611614
+      ],
       "pivotOffset": [
         0,
         0,
         0
       ],
-      "pivotSource": null,
+      "pivotSource": "offset",
       "axis": null,
       "spinAxis": null,
       "anchor": [
@@ -1395,14 +1415,14 @@
     "backgroundColor": "#0b0e14"
   },
   "camera": {
-    "fov": 52,
+    "fov": 41,
     "position": [
       5,
       3,
       -7
     ],
     "frame": {
-      "selectedMode": "rearAngle",
+      "selectedMode": "auto",
       "mobileDistanceMultiplier": 1.4,
       "editorPreviewDevice": "mobile",
       "editorPanEnabled": true,
@@ -1410,15 +1430,15 @@
         "auto": {
           "offset": [
             0,
-            0,
+            -0.6,
             0
           ],
           "targetOffset": [
             0,
-            0,
+            -2.15,
             0
           ],
-          "distanceScale": 1
+          "distanceScale": 0.85
         },
         "cockpit": {
           "offset": [
@@ -1521,7 +1541,7 @@
     "backgroundIntensity": 1
   },
   "animation": {
-    "autoRotate": false,
+    "autoRotate": true,
     "rotateSpeed": 0.4
   },
   "fog": {
@@ -1550,5 +1570,5 @@
     "watermark": true,
     "text": "made in AutoZ"
   },
-  "publishedAt": "2026-05-27T19:32:35.522Z"
+  "publishedAt": "2026-05-27T20:17:56.142Z"
 }

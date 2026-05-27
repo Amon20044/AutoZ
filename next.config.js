@@ -13,7 +13,12 @@ const nextConfig = {
   // compiler: {
   //   styledComponents: true,
   // },
-  reactStrictMode: true, // Recommended for the `pages` directory, default in `app`.
+  // StrictMode double-mounts components in dev. R3F's <Canvas> allocates a
+  // fresh WebGL context per mount, and Chromium kills the oldest context
+  // when the per-page cap is hit — that's the "Context Lost" we kept seeing
+  // on /editor/demo. Disabling StrictMode in dev stops the double-mount and
+  // the canvas stays alive. Production builds are unaffected.
+  reactStrictMode: false,
   images: {},
   webpack(config, { isServer }) {
     if (!isServer) {
