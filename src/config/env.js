@@ -7,7 +7,6 @@ const requiredEnvKeys = [
   'NEXT_PUBLIC_SUPABASE_URL',
   'NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY',
   'DATABASE_URL',
-  'DIRECT_URL',
   'IMGBB_API_KEY',
 ]
 
@@ -19,6 +18,11 @@ const readRequiredEnv = (key) => {
   }
 
   return value
+}
+
+const readOptionalEnv = (key) => {
+  const value = process.env[key]?.trim()
+  return value || null
 }
 
 export const initEnv = () => ({
@@ -35,7 +39,9 @@ export const initEnv = () => ({
   },
   database: {
     url: readRequiredEnv('DATABASE_URL'),
-    directUrl: readRequiredEnv('DIRECT_URL'),
+    // DIRECT_URL is optional — only needed if Prisma migrations are run from
+    // this process. The runtime client uses DATABASE_URL (pooled or direct).
+    directUrl: readOptionalEnv('DIRECT_URL'),
   },
   imgbb: {
     apiKey: readRequiredEnv('IMGBB_API_KEY'),
