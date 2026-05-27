@@ -127,7 +127,8 @@ function runWorkerTask({
     }
 
     worker.onerror = (event) => {
-      settle(reject, new Error(event.message || 'Asset worker crashed.'))
+      const detail = event.error?.message || event.message || 'Asset worker crashed.'
+      settle(reject, new Error(detail))
     }
 
     worker.postMessage({ type, ...payload }, transfer)
@@ -231,20 +232,31 @@ export async function generateOptimizedAssetFiles(file, {
   const statsBuffer = buffer.slice(0)
 
   const emitFile = (entry) => {
+    if (generatedFiles.some((fileEntry) => fileEntry.fileKey === entry.fileKey)) return
     generatedFiles.push(entry)
     onFile?.(entry)
   }
 
-  const statsPromise = runWorkerTask({
-    type: 'PROCESS_ASSET_ANALYZE',
-    payload: { buffer: statsBuffer },
-    transfer: [statsBuffer],
-    resolveType: 'ASSET_ANALYZED',
-    signal,
-    onProgress: progress.analyze,
-  }).then((message) => message.stats)
+  let stats = {}
+  try {
+    const statsMessage = await runWorkerTask({
+      type: 'PROCESS_ASSET_ANALYZE',
+      payload: { buffer: statsBuffer },
+      transfer: [statsBuffer],
+      resolveType: 'ASSET_ANALYZED',
+      signal,
+      onProgress: progress.analyze,
+    })
+    stats = statsMessage.stats
+  } catch (err) {
+    progress.analyze({
+      stage: 'fallback',
+      progress: 1,
+      message: `Asset analysis fallback: ${err.message || err || 'worker unavailable'}`,
+    })
+  }
 
-  const lodsPromise = runParallelQueue(LOD_VARIANTS, concurrency, async (lod) => {
+  const lodsResult = await Promise.allSettled([runParallelQueue(LOD_VARIANTS, concurrency, async (lod) => {
     const lodBuffer = buffer.slice(0)
     const message = await runWorkerTask({
       type: 'PROCESS_ASSET_LOD',
@@ -271,9 +283,34 @@ export async function generateOptimizedAssetFiles(file, {
       blob: message.blob,
       metadata: message.metadata,
     })
-  })
+  })])
 
-  const [stats] = await Promise.all([statsPromise, lodsPromise])
+  if (lodsResult[0].status === 'rejected') {
+    const reason = lodsResult[0].reason?.message || lodsResult[0].reason || 'worker unavailable'
+    progress.lod({
+      stage: 'fallback',
+      progress: 1,
+      message: `Using source GLB for failed LODs: ${reason}`,
+    })
+
+    for (const lod of LOD_VARIANTS) {
+      if (lodMetadata[lod.id]) continue
+
+      const fallbackBlob = new Blob([buffer.slice(0)], { type: file.type || 'model/gltf-binary' })
+      lodMetadata[lod.id] = {
+        bytes: fallbackBlob.size,
+        triangles: stats.originalTriangles || 0,
+        maxTextureSize: lod.maxTextureSize,
+        textureFormat: 'source',
+      }
+      emitFile({
+        fileKey: lod.key,
+        blob: fallbackBlob,
+        metadata: lodMetadata[lod.id],
+      })
+    }
+  }
+
   progress.manifest()
 
   const manifest = createBaseAssetManifest({

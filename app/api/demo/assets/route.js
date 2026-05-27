@@ -43,19 +43,35 @@ export async function POST(request) {
   }
 
   try {
-    const formData = await request.formData()
-    const fileKey = formData.get('fileKey')
-    const file = formData.get('file')
+    const requestUrl = new URL(request.url)
+    const headerFileKey = request.headers.get('x-demo-file-key')
+    let fileKey = requestUrl.searchParams.get('fileKey') || headerFileKey
+    let bytes = null
+
+    if (fileKey) {
+      bytes = Buffer.from(await request.arrayBuffer())
+    } else {
+      const contentType = request.headers.get('content-type') || ''
+      if (!contentType.includes('multipart/form-data') && !contentType.includes('application/x-www-form-urlencoded')) {
+        return NextResponse.json({ error: 'fileKey is required for raw demo asset uploads.' }, { status: 400 })
+      }
+
+      const formData = await request.formData()
+      fileKey = formData.get('fileKey')
+      const file = formData.get('file')
+
+      if (!file || typeof file === 'string' || typeof file.arrayBuffer !== 'function') {
+        return NextResponse.json({ error: 'file is required.' }, { status: 400 })
+      }
+
+      bytes = Buffer.from(await file.arrayBuffer())
+    }
 
     if (typeof fileKey !== 'string' || !fileKey) {
       return NextResponse.json({ error: 'fileKey is required.' }, { status: 400 })
     }
-    if (!file || typeof file === 'string' || typeof file.arrayBuffer !== 'function') {
-      return NextResponse.json({ error: 'file is required.' }, { status: 400 })
-    }
 
     const outputPath = getDemoOutputPath(fileKey)
-    const bytes = Buffer.from(await file.arrayBuffer())
     if (bytes.byteLength <= 0) {
       return NextResponse.json({ error: 'file is empty.' }, { status: 400 })
     }

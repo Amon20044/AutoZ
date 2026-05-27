@@ -19,6 +19,9 @@ const nextConfig = {
   // on /editor/demo. Disabling StrictMode in dev stops the double-mount and
   // the canvas stays alive. Production builds are unaffected.
   reactStrictMode: false,
+  experimental: {
+    proxyClientMaxBodySize: '250mb',
+  },
   images: {},
   webpack(config, { isServer }) {
     if (!isServer) {

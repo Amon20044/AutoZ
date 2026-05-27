@@ -113,13 +113,13 @@ function formatDemoLodProgress(file, event) {
 }
 
 async function uploadDemoGeneratedFile({ fileKey, blob }) {
-  const formData = new FormData()
-  formData.append('fileKey', fileKey)
-  formData.append('file', blob, fileKey === 'manifest.json' ? 'manifest.json' : fileKey.split('/').pop())
-
-  const res = await fetch('/api/demo/assets', {
+  const res = await fetch(`/api/demo/assets?fileKey=${encodeURIComponent(fileKey)}`, {
     method: 'POST',
-    body: formData,
+    headers: {
+      'Content-Type': blob.type || 'application/octet-stream',
+      'x-demo-file-key': fileKey,
+    },
+    body: blob,
   })
   const json = await res.json().catch(() => ({}))
   if (!res.ok) throw new Error(json.error || `Could not write ${fileKey}`)
@@ -302,6 +302,7 @@ export default function DemoEditorClient() {
       options: {
         geometryCompression: 'meshopt',
         textureMode: 'ktx2',
+        workerConcurrency: 1,
       },
     })
 

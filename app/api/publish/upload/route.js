@@ -3,7 +3,7 @@
  *
  * Chunked model upload proxy for large GLB files.
  *
- * The browser sends one Vercel-safe 3 MB binary request per file slice. Each
+ * The browser sends one Vercel-safe 4 MB binary request per file slice. Each
  * slice is stored as a separate object under models/{slug}/{uploadId}/{fileName}.part-000,
  * then the browser calls this route once more with mode=manifest to write
  * models/{slug}/{uploadId}/manifest.json.
@@ -19,7 +19,7 @@ import { s3Client, MODELS_BUCKET } from '@/config/s3'
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
 
-const CHUNK_SIZE = 3 * 1024 * 1024
+const CHUNK_SIZE = 4 * 1024 * 1024
 const CACHE_CONTROL_CHUNK = 'no-cache'
 const CACHE_CONTROL_MANIFEST = 'no-cache'
 

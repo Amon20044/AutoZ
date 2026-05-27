@@ -71,7 +71,7 @@
     "backgroundIntensity": 0.75
   },
   "animation": {
-    "autoRotate": true,
+    "autoRotate": false,
     "rotateSpeed": 0.32
   },
   "import": {
@@ -115,14 +115,14 @@
     }
   },
   "camera": {
-    "fov": 40,
+    "fov": 62,
     "position": [
       5,
       3,
       -7
     ],
     "frame": {
-      "selectedMode": "auto",
+      "selectedMode": "frontAngle",
       "mobileDistanceMultiplier": 1.4,
       "editorPreviewDevice": "desktop",
       "editorPanEnabled": true,
@@ -130,39 +130,39 @@
         "auto": {
           "offset": [
             0,
-            0,
+            -0.3,
             0
           ],
           "targetOffset": [
-            0,
-            0,
+            0.25,
+            -2.05,
             0
           ],
           "distanceScale": 1
         },
         "cockpit": {
           "offset": [
-            0,
-            0,
-            0
+            -0.3,
+            0.05,
+            -7.4
           ],
           "targetOffset": [
-            0,
-            0,
-            0
+            0.2,
+            -1.1,
+            4.3
           ],
           "distanceScale": 1
         },
         "top": {
           "offset": [
-            0,
-            0,
+            0.1,
+            -0.55,
             0
           ],
           "targetOffset": [
-            0,
-            0,
-            0
+            0.9,
+            -0.25,
+            0.2
           ],
           "distanceScale": 1
         },
@@ -174,7 +174,7 @@
           ],
           "targetOffset": [
             0,
-            0,
+            -2.1,
             0
           ],
           "distanceScale": 1
@@ -186,9 +186,9 @@
             0
           ],
           "targetOffset": [
-            0,
-            0,
-            0
+            0.55,
+            -2.95,
+            1.45
           ],
           "distanceScale": 1
         },
@@ -199,8 +199,8 @@
             0
           ],
           "targetOffset": [
-            0,
-            0,
+            1.2,
+            -2.3,
             0
           ],
           "distanceScale": 1
@@ -212,8 +212,8 @@
             0
           ],
           "targetOffset": [
-            0,
-            0,
+            0.95,
+            -2.35,
             0
           ],
           "distanceScale": 1
@@ -246,7 +246,173 @@
   "thumbnail": null,
   "textureAssets": [],
   "materials": [],
-  "assetManifest": null,
+  "assetManifest": {
+    "assetId": "demo",
+    "version": 1,
+    "createdAt": "2026-05-27T22:04:27.025Z",
+    "source": {
+      "fileName": "Fortuner-compressed.glb",
+      "originalBytes": 29415616,
+      "storedOriginal": false
+    },
+    "coordinateSystem": {
+      "up": "Y",
+      "forward": "Z"
+    },
+    "compression": {
+      "geometry": "meshopt",
+      "textures": "ktx2",
+      "textureFallback": "webp"
+    },
+    "deviceProfiles": {
+      "mobile": {
+        "firstLod": "mobile-low",
+        "maxDpr": 1,
+        "maxTextureSize": 512
+      },
+      "tablet": {
+        "firstLod": "tablet-low",
+        "maxDpr": 1.5,
+        "maxTextureSize": 1024
+      },
+      "desktop": {
+        "firstLod": "desktop-low",
+        "maxDpr": 2,
+        "maxTextureSize": 2048
+      }
+    },
+    "lods": [
+      {
+        "id": "mobile-low",
+        "url": "/demo/lods/lod-mobile-low.glb",
+        "device": [
+          "mobile"
+        ],
+        "triangleRatio": 0.08,
+        "maxTextureSize": 512,
+        "textureFormat": "source",
+        "distanceMin": 8,
+        "distanceMax": 9999,
+        "bytes": 29415616,
+        "triangles": 0,
+        "priority": 1
+      },
+      {
+        "id": "mobile-medium",
+        "url": "/demo/lods/lod-mobile-medium.glb",
+        "device": [
+          "mobile"
+        ],
+        "triangleRatio": 0.2,
+        "maxTextureSize": 1024,
+        "textureFormat": "source",
+        "distanceMin": 0,
+        "distanceMax": 8,
+        "bytes": 29415616,
+        "triangles": 0,
+        "priority": 2
+      },
+      {
+        "id": "tablet-low",
+        "url": "/demo/lods/lod-tablet-low.glb",
+        "device": [
+          "tablet"
+        ],
+        "triangleRatio": 0.16,
+        "maxTextureSize": 1024,
+        "textureFormat": "source",
+        "distanceMin": 10,
+        "distanceMax": 9999,
+        "bytes": 29415616,
+        "triangles": 0,
+        "priority": 1
+      },
+      {
+        "id": "tablet-high",
+        "url": "/demo/lods/lod-tablet-high.glb",
+        "device": [
+          "tablet"
+        ],
+        "triangleRatio": 0.38,
+        "maxTextureSize": 1536,
+        "textureFormat": "source",
+        "distanceMin": 0,
+        "distanceMax": 10,
+        "bytes": 29415616,
+        "triangles": 0,
+        "priority": 2
+      },
+      {
+        "id": "desktop-low",
+        "url": "/demo/lods/lod-desktop-low.glb",
+        "device": [
+          "desktop"
+        ],
+        "triangleRatio": 0.3,
+        "maxTextureSize": 1024,
+        "textureFormat": "source",
+        "distanceMin": 14,
+        "distanceMax": 9999,
+        "bytes": 29415616,
+        "triangles": 0,
+        "priority": 1
+      },
+      {
+        "id": "desktop-high",
+        "url": "/demo/lods/lod-desktop-high.glb",
+        "device": [
+          "desktop"
+        ],
+        "triangleRatio": 0.85,
+        "maxTextureSize": 2048,
+        "textureFormat": "source",
+        "distanceMin": 0,
+        "distanceMax": 14,
+        "bytes": 29415616,
+        "triangles": 0,
+        "priority": 3
+      }
+    ],
+    "stats": {
+      "originalTriangles": 0,
+      "materialCount": 0,
+      "textureCount": 0,
+      "drawCallEstimate": 0,
+      "lods": {
+        "mobile-low": {
+          "triangles": 0,
+          "bytes": 29415616,
+          "textureFormat": "source"
+        },
+        "mobile-medium": {
+          "triangles": 0,
+          "bytes": 29415616,
+          "textureFormat": "source"
+        },
+        "tablet-low": {
+          "triangles": 0,
+          "bytes": 29415616,
+          "textureFormat": "source"
+        },
+        "tablet-high": {
+          "triangles": 0,
+          "bytes": 29415616,
+          "textureFormat": "source"
+        },
+        "desktop-low": {
+          "triangles": 0,
+          "bytes": 29415616,
+          "textureFormat": "source"
+        },
+        "desktop-high": {
+          "triangles": 0,
+          "bytes": 29415616,
+          "textureFormat": "source"
+        }
+      }
+    },
+    "manifestUrl": "/demo/lods/manifest.json"
+  },
   "branding": {
     "watermark": true,
     "text": "made in AutoZ"
@@ -1568,5 +1734,5 @@
       "material": null
     }
   ],
-  "publishedAt": "2026-05-27T21:29:31.017Z"
+  "publishedAt": "2026-05-27T22:04:30.476Z"
 }

@@ -8,7 +8,7 @@
  *    The API uploads it to Supabase S3 server-side.
  *
  * B) **Chunked manifest upload** (large files):
- *    Client uploads 3 MB objects through POST /api/publish/upload, then calls
+ *    Client uploads 4 MB objects through POST /api/publish/upload, then calls
  *    this endpoint with `modelUrl` + `modelKey` + `modelFileName` +
  *    `modelFileSize` + chunk manifest metadata instead of a model File.
  *

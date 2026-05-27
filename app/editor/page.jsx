@@ -159,7 +159,7 @@ function formatAssetLodProgress(file, event) {
 //                               viewer rehydrates).
 const MODEL_INLINE_LIMIT = 3 * 1024 * 1024
 const MODEL_CHUNK_THRESHOLD = 40 * 1024 * 1024
-const LARGE_MODEL_CHUNK_SIZE = 3 * 1024 * 1024
+const LARGE_MODEL_CHUNK_SIZE = 4 * 1024 * 1024
 const LARGE_MODEL_UPLOAD_CONCURRENCY = 4
 
 function createUploadId() {
