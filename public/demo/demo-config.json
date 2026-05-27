@@ -71,7 +71,7 @@
     "backgroundIntensity": 0.75
   },
   "animation": {
-    "autoRotate": false,
+    "autoRotate": true,
     "rotateSpeed": 0.32
   },
   "import": {
@@ -122,7 +122,7 @@
       -7
     ],
     "frame": {
-      "selectedMode": "frontAngle",
+      "selectedMode": "auto",
       "mobileDistanceMultiplier": 1.4,
       "editorPreviewDevice": "desktop",
       "editorPanEnabled": true,
@@ -1734,5 +1734,5 @@
       "material": null
     }
   ],
-  "publishedAt": "2026-05-27T22:09:09.814Z"
+  "publishedAt": "2026-05-27T22:28:14.440Z"
 }
