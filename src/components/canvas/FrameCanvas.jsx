@@ -1,6 +1,6 @@
 'use client'
 
-import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Component, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Canvas, useFrame, useThree } from '@react-three/fiber'
 import {
   OrbitControls, PerspectiveCamera, AdaptiveDpr, useGLTF,
@@ -169,17 +169,19 @@ export default function FrameCanvas({ snapshot }) {
         <AdaptiveDpr />
         <StudioStage environment={environment} stage={stage} fog={fog} />
 
-        <Suspense fallback={null}>
-          {snapshot.model?.url && (
-            <FrameRuntimeLoader
-              snapshot={snapshot}
-              onReady={handleRuntimeReady}
-              onProgress={setModelLoadProgress}
-              onError={setModelLoadError}
-              showPartLabels={showPartLabels}
-            />
-          )}
-        </Suspense>
+        <FrameLoadBoundary onError={setModelLoadError}>
+          <Suspense fallback={null}>
+            {snapshot.model?.url && (
+              <FrameRuntimeLoader
+                snapshot={snapshot}
+                onReady={handleRuntimeReady}
+                onProgress={setModelLoadProgress}
+                onError={setModelLoadError}
+                showPartLabels={showPartLabels}
+              />
+            )}
+          </Suspense>
+        </FrameLoadBoundary>
 
         <ImperativeMeshPicker
           enabled={Boolean(runtime.engine && runtime.registry)}
@@ -597,4 +599,29 @@ function FrameRuntime({ snapshot, modelUrl, onReady, showPartLabels, onError }) 
       />
     )
   )
+}
+
+/**
+ * Catches anything thrown inside the Suspense — useGLTF parse failures,
+ * Draco decoder fetch errors, engine init throws. Forwards to onError so the
+ * caller renders a visible message instead of a permanent loading spinner.
+ */
+class FrameLoadBoundary extends Component {
+  constructor(props) {
+    super(props)
+    this.state = { hasError: false }
+  }
+
+  static getDerivedStateFromError() {
+    return { hasError: true }
+  }
+
+  componentDidCatch(error) {
+    console.error('[FrameCanvas] Load boundary caught:', error)
+    this.props.onError?.(error?.message || String(error) || 'Failed to load 3D scene.')
+  }
+
+  render() {
+    return this.state.hasError ? null : this.props.children
+  }
 }

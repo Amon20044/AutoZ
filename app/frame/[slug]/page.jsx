@@ -29,7 +29,12 @@ export default function FramePage() {
     ;(async () => {
       try {
         if (slug === DEMO_SLUG) {
-          const res = await fetch(DEMO_CONFIG_URL, { cache: 'force-cache' })
+          // `no-store` + a cache-busting query param: the demo JSON is the
+          // single source of truth for the landing iframe and gets rewritten
+          // by the local editor. force-cache was serving stale snapshots
+          // even after a save, so the model loaded but parts/normalization
+          // never reflected the latest config.
+          const res = await fetch(`${DEMO_CONFIG_URL}?v=${Date.now()}`, { cache: 'no-store' })
           if (!res.ok) throw new Error(`Demo config ${res.status}`)
           const config = await res.json()
           setSnapshot(config)
