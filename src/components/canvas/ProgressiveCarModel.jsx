@@ -48,6 +48,7 @@ function getPreloadLod(manifest, deviceProfile, currentLodId) {
 export default function ProgressiveCarModel({
   manifest,
   initialQuality = 'auto',
+  performanceRegression = 0,
   onFirstVisible,
   onFirstProgress,
   onDebugChange,
@@ -57,7 +58,8 @@ export default function ProgressiveCarModel({
   const loadingRef = useRef(new Map())
   const visibleObjectRef = useRef(null)
   const { gl, scene, invalidate } = useThree()
-  const deviceProfile = useDeviceProfile(gl)
+  const regressionLevel = performanceRegression > 0.5 ? 1 : 0
+  const deviceProfile = useDeviceProfile(gl, regressionLevel)
   const [currentLodId, setCurrentLodId] = useState(null)
   const [currentObject, setCurrentObject] = useState(null)
   const desiredLodId = useCameraDistanceLod({

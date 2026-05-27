@@ -580,7 +580,18 @@ function collectSnapshotStorageKeys(snapshot, slug) {
   const keys = new Set()
   const add = (key) => {
     if (typeof key !== 'string' || !key) return
-    keys.add(key.startsWith('models/') ? key : `models/${slug}/${key}`)
+    keys.add(key.startsWith('models/') || key.startsWith('assets/') ? key : `models/${slug}/${key}`)
+  }
+  const addFromPublicStorageUrl = (url) => {
+    if (!url || typeof url !== 'string') return
+    try {
+      const parsed = new URL(url)
+      const marker = `/${MODELS_BUCKET}/`
+      const markerIndex = parsed.pathname.indexOf(marker)
+      if (markerIndex >= 0) add(decodeURIComponent(parsed.pathname.slice(markerIndex + marker.length)))
+    } catch {
+      // Ignore local demo URLs and malformed values.
+    }
   }
 
   if (snapshot.model?.manifestKey) {
@@ -607,6 +618,17 @@ function collectSnapshotStorageKeys(snapshot, slug) {
 
   for (const asset of snapshot.runtimeAssets ?? []) {
     add(asset.key || asset.path)
+  }
+
+  const assetManifest = snapshot.assetManifest
+    || snapshot.model?.assetManifest
+    || snapshot.assets?.assetManifest
+    || null
+  addFromPublicStorageUrl(assetManifest?.manifestUrl)
+  addFromPublicStorageUrl(assetManifest?.url)
+  for (const lod of assetManifest?.lods ?? []) {
+    add(lod.storagePath)
+    addFromPublicStorageUrl(lod.url)
   }
 
   return [...keys]

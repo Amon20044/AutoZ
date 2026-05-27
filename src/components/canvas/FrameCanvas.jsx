@@ -5,6 +5,7 @@ import { Canvas, useFrame, useThree } from '@react-three/fiber'
 import {
   OrbitControls, PerspectiveCamera, AdaptiveDpr, useGLTF,
 } from '@react-three/drei'
+import { KTX2Loader } from 'three/examples/jsm/loaders/KTX2Loader.js'
 import * as THREE from 'three'
 import { Camera, Disc3, Eye, EyeOff, Lightbulb } from 'lucide-react'
 import PostProcessing, { RendererSettings } from './PostProcessing'
@@ -12,6 +13,7 @@ import PartButtons from './PartButtons'
 import StudioStage from './StudioStage'
 import ImperativeMeshPicker from './ImperativeMeshPicker'
 import CockpitLookControls from './CockpitLookControls'
+import FpsTracker from './FpsTracker'
 import { useAutoZEngine } from '@/engine/hooks/useAutoZEngine'
 import {
   createModelObjectUrl,
@@ -23,6 +25,7 @@ import { installThreeConsoleFilter } from '@/lib/three/console-filter'
 import { useDeviceProfile } from '@/hooks/useDeviceProfile'
 import { computeFrameCameraPreset, FRAME_CAMERA_MODES } from '@/engine/math/camera'
 import { dampVec3, stableDelta } from '@/engine/math/animation'
+import { pickDeviceLod } from '@/lib/assets/lod-manifest'
 
 installThreeConsoleFilter()
 
@@ -64,8 +67,14 @@ export default function FrameCanvas({ snapshot }) {
   const [showPartLabels, setShowPartLabels] = useState(false)
   const [cameraMode, setCameraMode] = useState(snapshot.camera?.frame?.selectedMode ?? 'auto')
   const [frameInfo, setFrameInfo] = useState(null)
+  const [fpsSample, setFpsSample] = useState({ fps: null, regression: 0 })
   const controlsRef = useRef(null)
   const isCockpit = cameraMode === 'cockpit'
+  const performanceRegressed = fpsSample.regression > 0.5
+  const runtimeStage = useMemo(
+    () => (performanceRegressed ? { ...stage, shadows: false, shadowResolution: 512 } : stage),
+    [performanceRegressed, stage],
+  )
 
   const lightCount = runtime.registry?.headLights.length || runtime.registry?.lights.length || 0
   const wheelCount = runtime.registry?.wheelSpinParts.length ?? 0
@@ -124,6 +133,18 @@ export default function FrameCanvas({ snapshot }) {
     if (wheelsOn) runtime.engine?.setWheelSpin(true, value)
   }, [runtime.engine, wheelsOn])
 
+  const handleFpsSample = useCallback((sample) => {
+    setFpsSample((prev) => {
+      if (
+        prev.fps === sample.fps
+        && Math.abs((prev.regression ?? 0) - (sample.regression ?? 0)) < 0.05
+      ) {
+        return prev
+      }
+      return sample
+    })
+  }, [])
+
   return (
     <div className='frame-canvas-shell'>
       <Canvas
@@ -137,7 +158,7 @@ export default function FrameCanvas({ snapshot }) {
           preserveDrawingBuffer: false,
           failIfMajorPerformanceCaveat: false,
         }}
-        dpr={[1, 2]}
+        dpr={[1, performanceRegressed ? 1.25 : 2]}
         style={{ background: backgroundColor, width: '100%', height: '100%' }}
         onCreated={({ gl }) => attachContextRecovery(gl, 'FrameCanvas')}
       >
@@ -149,6 +170,8 @@ export default function FrameCanvas({ snapshot }) {
           position={cam.position ?? [5, 3, -7]}
         />
         <RendererSettings exposure={post.exposure ?? 1.1} />
+        <FrameAdaptiveQuality performanceRegression={fpsSample.regression} />
+        <FpsTracker onSample={handleFpsSample} />
 
         <OrbitControls
           ref={controlsRef}
@@ -184,7 +207,7 @@ export default function FrameCanvas({ snapshot }) {
         />
 
         <AdaptiveDpr />
-        <StudioStage environment={environment} stage={stage} fog={fog} />
+        <StudioStage environment={environment} stage={runtimeStage} fog={fog} />
 
         <FrameLoadBoundary onError={setModelLoadError}>
           <Suspense fallback={null}>
@@ -195,6 +218,7 @@ export default function FrameCanvas({ snapshot }) {
                 onProgress={setModelLoadProgress}
                 onError={setModelLoadError}
                 showPartLabels={showPartLabels}
+                performanceRegression={fpsSample.regression}
               />
             )}
           </Suspense>
@@ -212,8 +236,14 @@ export default function FrameCanvas({ snapshot }) {
           }}
         />
 
-        {post.enabled !== false && <PostProcessing config={post} />}
+        {post.enabled !== false && !performanceRegressed && <PostProcessing config={post} />}
       </Canvas>
+
+      {fpsSample.fps !== null && (
+        <div className='frame-fps-badge' aria-label={`FPS ${fpsSample.fps}`}>
+          {fpsSample.fps} FPS
+        </div>
+      )}
 
       {modelLoadError && snapshot.model?.url && (
         <div className='frame-loading frame-loading--error' role='alert'>
@@ -344,6 +374,36 @@ function getFrameAssetManifest(snapshot) {
     ?? null
 }
 
+function FrameAdaptiveQuality({ performanceRegression = 0 }) {
+  const gl = useThree((state) => state.gl)
+  const scene = useThree((state) => state.scene)
+  const regressionLevel = performanceRegression > 0.5 ? 1 : 0
+  const deviceProfile = useDeviceProfile(gl, regressionLevel)
+
+  useEffect(() => {
+    if (!gl || typeof window === 'undefined') return
+
+    gl.setPixelRatio(Math.min(window.devicePixelRatio || 1, deviceProfile.maxDpr))
+    gl.shadowMap.enabled = Boolean(deviceProfile.allowShadows)
+
+    scene.traverse((object) => {
+      if (object.isLight && object.shadow) {
+        const size = deviceProfile.deviceClass === 'desktop' && deviceProfile.allowShadows ? 1024 : 512
+        object.shadow.mapSize.width = size
+        object.shadow.mapSize.height = size
+      }
+    })
+  }, [
+    deviceProfile.allowShadows,
+    deviceProfile.deviceClass,
+    deviceProfile.maxDpr,
+    gl,
+    scene,
+  ])
+
+  return null
+}
+
 function FrameCameraRig({
   mode, controlsRef, frameInfo, fallbackTarget, snapshot, cameraSettings, rotateSpeed = 0.35,
 }) {
@@ -445,34 +505,17 @@ function isStandaloneGltfUrl(raw) {
  * Lowest-footprint LOD for the client's device tier — used while a chunked GLB downloads.
  */
 function pickProgressivePreviewLod(assetManifest, deviceProfile) {
-  const lods = [...(assetManifest?.lods ?? [])]
-    .filter((lod) => lod?.url && isStandaloneGltfUrl(lod.url))
-
-  if (lods.length === 0) return null
-
-  const deviceMatch = (lod) =>
-    !Array.isArray(lod.device)
-    || lod.device.length === 0
-    || lod.device.includes(deviceProfile.deviceClass)
-
-  const prioritized = lods.filter(deviceMatch)
-  const pool = prioritized.length ? prioritized : lods
-
-  pool.sort((a, b) => {
-    const pa = Number.isFinite(a.priority) ? a.priority : 99
-    const pb = Number.isFinite(b.priority) ? b.priority : 99
-    if (pa !== pb) return pa - pb
-    return (Number(a.bytes) || 1e18) - (Number(b.bytes) || 1e18)
-  })
-
-  return pool[0]
+  const lod = pickDeviceLod(assetManifest, deviceProfile.deviceClass)
+  return lod?.url && isStandaloneGltfUrl(lod.url) ? lod : null
 }
 
 function FrameRuntimeLoader({
-  snapshot, onReady, onProgress, onError, showPartLabels,
+  snapshot, onReady, onProgress, onError, showPartLabels, performanceRegression = 0,
 }) {
   const gl = useThree((state) => state.gl)
-  const deviceProfile = useDeviceProfile(gl)
+  const regressionLevel = performanceRegression > 0.5 ? 1 : 0
+  const deviceProfile = useDeviceProfile(gl, regressionLevel)
+  const deviceClass = deviceProfile.deviceClass
   const [modelUrl, setModelUrl] = useState(null)
   const previewUrlRef = useRef(null)
 
@@ -500,9 +543,32 @@ function FrameRuntimeLoader({
 
     if (!modelPayload?.url) return undefined
 
-    const chunked = isChunkedModel(modelPayload)
     const assetManifest = getFrameAssetManifest(snapshot)
-    const previewLod = chunked ? pickProgressivePreviewLod(assetManifest, deviceProfile) : null
+    const manifestLod = pickProgressivePreviewLod(assetManifest, { deviceClass })
+
+    if (manifestLod?.url) {
+      const lodUrl = normalizeStorageUrl(manifestLod.url)
+      previewUrlRef.current = lodUrl
+      setModelUrl(lodUrl)
+      onProgress?.({
+        phase: 'done',
+        fileName: manifestLod.fileName || manifestLod.id || 'device-lod',
+        percent: 100,
+        totalParts: 1,
+        completedParts: 1,
+        cachedParts: 0,
+        statusText: `Loading ${manifestLod.id || 'device'} LOD`,
+        parts: [],
+      })
+
+      return () => {
+        active = false
+        clearPreviewCache()
+      }
+    }
+
+    const chunked = isChunkedModel(modelPayload)
+    const previewLod = chunked ? pickProgressivePreviewLod(assetManifest, { deviceClass }) : null
 
     const finalizeFromBlob = async () => {
       const result = await createModelObjectUrl(modelPayload, { onProgress })
@@ -572,7 +638,7 @@ function FrameRuntimeLoader({
     }
   }, [
     snapshot,
-    deviceProfile,
+    deviceClass,
     onError,
     onProgress,
     onReady,
@@ -593,7 +659,14 @@ function FrameRuntimeLoader({
 }
 
 function FrameRuntime({ snapshot, modelUrl, onReady, showPartLabels, onError }) {
-  const gltf = useGLTF(modelUrl)
+  const gl = useThree((state) => state.gl)
+  const extendLoader = useCallback((loader) => {
+    const ktx2 = new KTX2Loader()
+    ktx2.setTranscoderPath('/decoders/basis/')
+    ktx2.detectSupport(gl)
+    loader.setKTX2Loader(ktx2)
+  }, [gl])
+  const gltf = useGLTF(modelUrl, '/decoders/draco/', true, extendLoader)
   const { engine, registry, error, isLoaded } = useAutoZEngine(snapshot, gltf)
 
   useEffect(() => {

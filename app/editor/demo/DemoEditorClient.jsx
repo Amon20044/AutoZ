@@ -11,11 +11,20 @@ import EditorSettingsPanel from '@/components/dom/EditorSettingsPanel'
 import { runImportPipeline } from '@/engine/pipeline/import-pipeline'
 import { InteractionEngine } from '@/engine/core/interaction-engine'
 import { DEFAULT_FRAME_CAMERA_SETTINGS } from '@/engine/math/camera'
+import { generateOptimizedAssetFiles } from '@/lib/assets/upload-optimized-asset'
+import { isCompleteAssetManifest } from '@/lib/assets/lod-manifest'
+import { LOD_VARIANTS } from '@/lib/assets/lod-profiles'
 
 const CarViewer = dynamic(() => import('@/components/canvas/CarViewer'), { ssr: false })
 
 const DEMO_MODEL_URL = '/Fortuner-compressed.glb'
 const DEMO_MODEL_NAME = 'Fortuner-compressed.glb'
+const DEMO_ASSET_ID = 'demo'
+const DEMO_SAVE_PROGRESS_STEPS = [
+  { id: 'config', label: 'Preparing config' },
+  { id: 'lods', label: 'Generating device LODs' },
+  { id: 'save', label: 'Writing public demo' },
+]
 
 const DEFAULT_DEMO_CONFIG = {
   environment: { preset: 'studio', background: false, backgroundColor: '#0b0e14' },
@@ -65,9 +74,65 @@ const DEFAULT_DEMO_CONFIG = {
   },
 }
 
+const buildDemoSaveProgress = (activeIndex = -1, failedIndex = -1) =>
+  DEMO_SAVE_PROGRESS_STEPS.map((step, index) => ({
+    ...step,
+    status: failedIndex === index
+      ? 'error'
+      : activeIndex === -1
+        ? 'pending'
+        : index < activeIndex
+          ? 'done'
+          : index === activeIndex
+            ? 'running'
+            : 'pending',
+  }))
+
+function getDemoAssetPublicUrls() {
+  const urls = Object.fromEntries(
+    LOD_VARIANTS.map((lod) => [lod.key, `/demo/${lod.key}`]),
+  )
+  urls['manifest.json'] = '/demo/lods/manifest.json'
+  return urls
+}
+
+function formatDemoLodProgress(file, event) {
+  const progress = Math.max(0, Math.min(1, event?.progress ?? 0))
+  return {
+    phase: 'optimizing',
+    fileName: file.name,
+    totalBytes: file.size,
+    uploadedBytes: 0,
+    percent: Math.max(1, Math.min(95, Math.round(progress * 88))),
+    totalParts: LOD_VARIANTS.length,
+    completedParts: Math.max(0, Math.min(LOD_VARIANTS.length, Math.floor(progress * LOD_VARIANTS.length))),
+    currentPart: null,
+    statusText: event?.message || 'Generating device LODs in browser',
+    parts: [],
+  }
+}
+
+async function uploadDemoGeneratedFile({ fileKey, blob }) {
+  const formData = new FormData()
+  formData.append('fileKey', fileKey)
+  formData.append('file', blob, fileKey === 'manifest.json' ? 'manifest.json' : fileKey.split('/').pop())
+
+  const res = await fetch('/api/demo/assets', {
+    method: 'POST',
+    body: formData,
+  })
+  const json = await res.json().catch(() => ({}))
+  if (!res.ok) throw new Error(json.error || `Could not write ${fileKey}`)
+  return json
+}
+
 function mergeSceneConfig(snapshot = {}) {
   return {
     ...DEFAULT_DEMO_CONFIG,
+    assetManifest: snapshot.assetManifest
+      ?? snapshot.model?.assetManifest
+      ?? snapshot.assets?.assetManifest
+      ?? null,
     environment: { ...DEFAULT_DEMO_CONFIG.environment, ...(snapshot.environment ?? {}) },
     lighting: {
       ...DEFAULT_DEMO_CONFIG.lighting,
@@ -86,6 +151,7 @@ function mergeSceneConfig(snapshot = {}) {
 
 export default function DemoEditorClient() {
   const interactionRef = useRef(new InteractionEngine())
+  const modelFileRef = useRef(null)
 
   const [phase, setPhase] = useState('loading') // 'loading' | 'ready' | 'error'
   const [importResult, setImportResult] = useState(null)
@@ -93,6 +159,8 @@ export default function DemoEditorClient() {
   const [sceneConfig, setSceneConfig] = useState({ ...DEFAULT_DEMO_CONFIG })
   const [error, setError] = useState(null)
   const [saving, setSaving] = useState(false)
+  const [saveProgress, setSaveProgress] = useState(() => buildDemoSaveProgress())
+  const [saveUploadProgress, setSaveUploadProgress] = useState(null)
   const [toast, setToast] = useState(null)
   const [, setPartRevision] = useState(0)
   const snapshotRef = useRef(null)
@@ -114,11 +182,14 @@ export default function DemoEditorClient() {
         if (!modelRes.ok) throw new Error(`Could not load ${DEMO_MODEL_URL} (${modelRes.status}).`)
 
         const configJson = await configRes.json()
-        const snapshot = configJson.config ?? {}
+        const snapshot = configJson.config && typeof configJson.config === 'object' && !Array.isArray(configJson.config)
+          ? configJson.config
+          : {}
         snapshotRef.current = snapshot
 
         const blob = await modelRes.blob()
         const file = new File([blob], DEMO_MODEL_NAME, { type: blob.type || 'model/gltf-binary' })
+        modelFileRef.current = file
         const entry = { path: DEMO_MODEL_NAME, file }
 
         const result = await runImportPipeline([entry], { parts: snapshot.parts ?? [] })
@@ -195,32 +266,90 @@ export default function DemoEditorClient() {
     setSceneConfig((prev) => ({ ...prev, [key]: value }))
   }, [])
 
+  const ensureDemoAssetManifest = useCallback(async (existingManifest) => {
+    if (isCompleteAssetManifest(existingManifest)) {
+      setSaveUploadProgress({
+        phase: 'done',
+        fileName: 'Device LOD manifest',
+        totalBytes: modelFileRef.current?.size ?? 0,
+        uploadedBytes: modelFileRef.current?.size ?? 0,
+        percent: 100,
+        totalParts: LOD_VARIANTS.length,
+        completedParts: LOD_VARIANTS.length,
+        currentPart: null,
+        statusText: 'Reusing existing public demo LODs',
+        parts: [],
+      })
+      return existingManifest
+    }
+
+    const modelFile = modelFileRef.current
+    if (!modelFile) return null
+
+    const uploadPromises = []
+    const generated = await generateOptimizedAssetFiles(modelFile, {
+      assetId: DEMO_ASSET_ID,
+      publicUrls: getDemoAssetPublicUrls(),
+      onProgress: (event) => setSaveUploadProgress(formatDemoLodProgress(modelFile, event)),
+      onFile: (entry) => {
+        setSaveUploadProgress((prev) => ({
+          ...(prev ?? formatDemoLodProgress(modelFile, null)),
+          phase: 'uploading',
+          statusText: `Writing ${entry.fileKey} to public/demo/lods`,
+        }))
+        uploadPromises.push(uploadDemoGeneratedFile(entry))
+      },
+      options: {
+        geometryCompression: 'meshopt',
+        textureMode: 'ktx2',
+      },
+    })
+
+    await Promise.all(uploadPromises)
+    return generated.manifest
+  }, [])
+
   // ─── Save demo config ──────────────────────────────────────────────────
   const handleSave = useCallback(async () => {
     if (!importResult) return
     setSaving(true)
     setError(null)
     setToast(null)
+    setSaveProgress(buildDemoSaveProgress(0))
+    setSaveUploadProgress({
+      phase: 'optimizing',
+      fileName: DEMO_MODEL_NAME,
+      totalBytes: 0,
+      uploadedBytes: 0,
+      percent: 10,
+      totalParts: LOD_VARIANTS.length,
+      completedParts: 0,
+      currentPart: null,
+      statusText: 'Preparing demo config',
+      parts: [],
+    })
 
     try {
       const normResult = importResult.normResult ?? {}
       const previousSnapshot = snapshotRef.current ?? {}
+      const model = {
+        url: DEMO_MODEL_URL,
+        fileName: DEMO_MODEL_NAME,
+        path: DEMO_MODEL_NAME,
+        contentType: 'model/gltf-binary',
+        ...(previousSnapshot.model ?? {}),
+      }
       const nextConfig = {
         ...previousSnapshot,
         ...sceneConfig,
         version: previousSnapshot.version ?? 1,
         slug: previousSnapshot.slug ?? 'demo-landing',
-        model: previousSnapshot.model ?? {
-          url: DEMO_MODEL_URL,
-          fileName: DEMO_MODEL_NAME,
-          path: DEMO_MODEL_NAME,
-          contentType: 'model/gltf-binary',
-        },
+        model,
         runtimeAssets: previousSnapshot.runtimeAssets ?? [],
         thumbnail: previousSnapshot.thumbnail ?? null,
         textureAssets: previousSnapshot.textureAssets ?? [],
         materials: previousSnapshot.materials ?? [],
-        assetManifest: previousSnapshot.assetManifest ?? null,
+        assetManifest: sceneConfig.assetManifest ?? previousSnapshot.assetManifest ?? null,
         branding: previousSnapshot.branding ?? { watermark: true, text: 'made in AutoZ' },
         performance: previousSnapshot.performance ?? { preset: 'high' },
         parts: importResult.registry?.serialize?.() ?? previousSnapshot.parts ?? [],
@@ -236,6 +365,44 @@ export default function DemoEditorClient() {
         },
       }
 
+      setSaveProgress(buildDemoSaveProgress(1))
+      setSaveUploadProgress({
+        phase: 'optimizing',
+        fileName: DEMO_MODEL_NAME,
+        totalBytes: modelFileRef.current?.size ?? 0,
+        uploadedBytes: 0,
+        percent: 45,
+        totalParts: LOD_VARIANTS.length,
+        completedParts: 2,
+        currentPart: null,
+        statusText: 'Generating device LODs in browser if missing',
+        parts: [],
+      })
+
+      let optimizationWarning = null
+      try {
+        nextConfig.assetManifest = await ensureDemoAssetManifest(nextConfig.assetManifest)
+      } catch (err) {
+        optimizationWarning = err.message || String(err)
+        nextConfig.assetManifest = null
+        setSaveUploadProgress((prev) => ({
+          ...(prev ?? {}),
+          phase: 'warning',
+          percent: 100,
+          statusText: `LOD generation skipped: ${optimizationWarning}`,
+        }))
+      }
+
+      setSaveProgress(buildDemoSaveProgress(2))
+      setSaveUploadProgress((prev) => ({
+        ...(prev ?? {}),
+        phase: 'uploading',
+        percent: Math.max(prev?.percent ?? 0, 96),
+        statusText: optimizationWarning
+          ? 'Writing config with original GLB fallback'
+          : 'Writing public demo config',
+      }))
+
       const res = await fetch('/api/demo/config', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -245,22 +412,43 @@ export default function DemoEditorClient() {
       if (!res.ok) throw new Error(json.error || `Save failed (${res.status}).`)
 
       snapshotRef.current = json.config ?? nextConfig
+      setSaveProgress(DEMO_SAVE_PROGRESS_STEPS.map((step) => ({ ...step, status: 'done' })))
+      setSaveUploadProgress({
+        phase: optimizationWarning || json.generated?.skipped ? 'warning' : 'done',
+        fileName: DEMO_MODEL_NAME,
+        totalBytes: modelFileRef.current?.size ?? 0,
+        uploadedBytes: modelFileRef.current?.size ?? 0,
+        percent: 100,
+        totalParts: LOD_VARIANTS.length,
+        completedParts: optimizationWarning || json.generated?.skipped ? 0 : LOD_VARIANTS.length,
+        currentPart: null,
+        statusText: optimizationWarning || json.generated?.skipped
+          ? `Saved with original GLB fallback: ${optimizationWarning || json.generated.warning || 'LOD files unavailable'}`
+          : 'Demo LODs stored in public/demo/lods',
+        parts: [],
+      })
       try {
         window.localStorage.removeItem('autoz:demo-config:v1')
       } catch { /* ignore */ }
       setToast(`Saved → ${json.file || 'public/demo/demo-config.json'} · commit + push to deploy`)
       setTimeout(() => setToast(null), 6000)
     } catch (err) {
+      setSaveProgress((steps) => {
+        const runningIndex = Math.max(steps.findIndex((step) => step.status === 'running'), 0)
+        return buildDemoSaveProgress(runningIndex, runningIndex)
+      })
+      setSaveUploadProgress((prev) => prev ? { ...prev, phase: 'error', percent: 100, statusText: err.message || String(err) } : prev)
       setError(err.message || String(err))
     } finally {
       setSaving(false)
     }
-  }, [importResult, sceneConfig])
+  }, [ensureDemoAssetManifest, importResult, sceneConfig])
 
   const handleResetScene = useCallback(() => {
     setSceneConfig((prev) => ({
       ...DEFAULT_DEMO_CONFIG,
       camera: { ...DEFAULT_DEMO_CONFIG.camera },
+      assetManifest: prev.assetManifest ?? null,
       import: prev.import,
     }))
   }, [])
@@ -362,8 +550,8 @@ export default function DemoEditorClient() {
             publishId={'demo-landing'}
             publishIdError={null}
             isAllocatingPublishId={false}
-            publishProgress={[]}
-            uploadProgress={null}
+            publishProgress={saveProgress}
+            uploadProgress={saveUploadProgress}
           />
         )}
       </div>

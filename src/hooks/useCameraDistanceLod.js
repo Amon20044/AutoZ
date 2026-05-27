@@ -6,10 +6,16 @@ import * as THREE from 'three'
 
 const HYSTERESIS = 3
 
-function getDeviceLods(manifest, deviceClass) {
-  return (manifest?.lods ?? [])
-    .filter((lod) => lod.device?.includes(deviceClass))
+function getDeviceLods(manifest, deviceProfile) {
+  const lods = (manifest?.lods ?? [])
+    .filter((lod) => lod.device?.includes(deviceProfile.deviceClass))
     .sort((a, b) => (a.distanceMin || 0) - (b.distanceMin || 0))
+
+  if (deviceProfile.allowHighLod) return lods
+
+  const preferred = lods.find((lod) => lod.id === deviceProfile.preferredLod) || lods[0]
+  const maxPriority = preferred?.priority ?? 1
+  return lods.filter((lod) => (lod.priority || 0) <= maxPriority)
 }
 
 function pickDistanceLod(lods, distance, currentLodId) {
@@ -48,7 +54,7 @@ export function useCameraDistanceLod({ manifest, deviceProfile, currentLodId, ob
     if (state.clock.elapsedTime - lastCheck.current < 0.25) return
     lastCheck.current = state.clock.elapsedTime
 
-    const lods = getDeviceLods(manifest, deviceProfile.deviceClass)
+    const lods = getDeviceLods(manifest, deviceProfile)
     const distance = camera.position.distanceTo(sphere.center)
     const next = pickDistanceLod(lods, distance, currentLodId)
     if (next?.id && next.id !== desiredLodId) {

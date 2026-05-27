@@ -5,6 +5,7 @@ import { Canvas, useThree } from '@react-three/fiber'
 import { AdaptiveDpr, ContactShadows, Environment, OrbitControls, PerspectiveCamera } from '@react-three/drei'
 import * as THREE from 'three'
 import ProgressiveCarModel from './ProgressiveCarModel'
+import FpsTracker from './FpsTracker'
 
 function DemandOrbitControls() {
   const invalidate = useThree((state) => state.invalidate)
@@ -25,6 +26,7 @@ export default function ProgressiveAssetCanvas({ manifest }) {
   const [firstVisible, setFirstVisible] = useState(false)
   const [firstProgress, setFirstProgress] = useState({ percent: 0 })
   const [debug, setDebug] = useState(null)
+  const [fpsSample, setFpsSample] = useState({ fps: null, regression: 0 })
 
   const handleFirstProgress = useCallback((event) => {
     setFirstProgress((prev) => ({
@@ -32,6 +34,18 @@ export default function ProgressiveAssetCanvas({ manifest }) {
       ...event,
       percent: event.percent ?? prev.percent ?? 0,
     }))
+  }, [])
+
+  const handleFpsSample = useCallback((sample) => {
+    setFpsSample((prev) => {
+      if (
+        prev.fps === sample.fps
+        && Math.abs((prev.regression ?? 0) - (sample.regression ?? 0)) < 0.05
+      ) {
+        return prev
+      }
+      return sample
+    })
   }, [])
 
   return (
@@ -58,8 +72,10 @@ export default function ProgressiveAssetCanvas({ manifest }) {
         <directionalLight position={[-5, 3, 4]} intensity={0.8} />
 
         <Suspense fallback={null}>
+          <FpsTracker onSample={handleFpsSample} />
           <ProgressiveCarModel
             manifest={manifest}
+            performanceRegression={fpsSample.regression}
             onFirstVisible={() => setFirstVisible(true)}
             onFirstProgress={handleFirstProgress}
             onDebugChange={setDebug}
@@ -79,6 +95,12 @@ export default function ProgressiveAssetCanvas({ manifest }) {
             </div>
             <code>{firstProgress.percent || 0}%</code>
           </div>
+        </div>
+      )}
+
+      {fpsSample.fps !== null && (
+        <div className='frame-fps-badge' aria-label={`FPS ${fpsSample.fps}`}>
+          {fpsSample.fps} FPS
         </div>
       )}
 

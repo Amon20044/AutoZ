@@ -16,6 +16,9 @@ import { InteractionEngine } from '@/engine/core/interaction-engine'
 import { fetchModelBlob, normalizeStorageUrl } from '@/lib/model/chunked-model'
 import { optimizePublishModelFile } from '@/lib/model/optimize-publish-model'
 import { DEFAULT_FRAME_CAMERA_SETTINGS } from '@/engine/math/camera'
+import { uploadOptimizedAsset } from '@/lib/assets/upload-optimized-asset'
+import { isCompleteAssetManifest } from '@/lib/assets/lod-manifest'
+import { LOD_VARIANTS } from '@/lib/assets/lod-profiles'
 
 // Dynamic import for the 3D viewer (no SSR)
 const CarViewer = dynamic(
@@ -89,6 +92,7 @@ const TEXTURE_EXTENSIONS = new Set([
 
 const PUBLISH_PROGRESS_STEPS = [
   { id: 'id', label: 'Checking URL ID' },
+  { id: 'lods', label: 'Preparing LODs' },
   { id: 'model', label: 'Uploading model' },
   { id: 'textures', label: 'Uploading textures' },
   { id: 'scene', label: 'Finalizing scene' },
@@ -112,6 +116,38 @@ const buildPublishProgress = (activeIndex = -1, failedIndex = -1) =>
 const isTextureFile = (file) => {
   const ext = file.name.split('.').pop()?.toLowerCase()
   return Boolean(ext && TEXTURE_EXTENSIONS.has(ext))
+}
+
+function formatAssetLodProgress(file, event) {
+  if (event?.type === 'upload') {
+    const percent = Math.max(1, Math.min(99, Math.round(70 + ((event.percent || 0) * 0.28))))
+    return {
+      phase: 'uploading',
+      fileName: event.fileKey || file.name,
+      totalBytes: event.total || file.size,
+      uploadedBytes: event.loaded || 0,
+      percent,
+      totalParts: LOD_VARIANTS.length,
+      completedParts: Math.max(0, Math.min(LOD_VARIANTS.length, Math.floor((percent / 100) * LOD_VARIANTS.length))),
+      currentPart: null,
+      statusText: `Uploading ${event.fileKey || 'LOD'} to Supabase Storage`,
+      parts: [],
+    }
+  }
+
+  const progress = Math.max(0, Math.min(1, event?.progress ?? 0))
+  return {
+    phase: 'optimizing',
+    fileName: file.name,
+    totalBytes: file.size,
+    uploadedBytes: 0,
+    percent: Math.max(1, Math.min(99, Math.round(progress * 70))),
+    totalParts: LOD_VARIANTS.length,
+    completedParts: Math.max(0, Math.min(LOD_VARIANTS.length, Math.floor(progress * LOD_VARIANTS.length))),
+    currentPart: null,
+    statusText: event?.message || 'Generating optimized LODs',
+    parts: [],
+  }
 }
 
 // Upload routing thresholds.
@@ -371,6 +407,10 @@ async function uploadChunkedModel(file, slug, uploadId, onProgress) {
 
 const mergeSceneConfigFromSnapshot = (snapshot = {}) => ({
   ...DEFAULT_CONFIG,
+  assetManifest: snapshot.assetManifest
+    ?? snapshot.model?.assetManifest
+    ?? snapshot.assets?.assetManifest
+    ?? null,
   environment: { ...DEFAULT_CONFIG.environment, ...(snapshot.environment ?? {}) },
   import: {
     ...(DEFAULT_CONFIG.import ?? {}),
@@ -578,6 +618,9 @@ export default function EditorPage({ initialPublishId = '' }) {
     droppedFilesRef.current = files
     modelFileRef.current = null
     modelEntryRef.current = null
+    if (!options.preserveTransferProgress) {
+      setSceneConfig((prev) => ({ ...prev, assetManifest: null }))
+    }
     // Store first model file for publish
     const modelEntry = files.find((f) => {
       const name = f.file.name.toLowerCase()
@@ -651,6 +694,67 @@ export default function EditorPage({ initialPublishId = '' }) {
       active = false
     }
   }, [handleFiles, initialPublishId])
+
+  const ensurePublishAssetManifest = useCallback(async (sourceModelFile) => {
+    const existingManifest = sceneConfig.assetManifest
+      ?? sceneConfig.model?.assetManifest
+      ?? sceneConfig.assets?.assetManifest
+      ?? null
+
+    if (isCompleteAssetManifest(existingManifest)) {
+      setUploadProgress({
+        phase: 'done',
+        fileName: 'Device LOD manifest',
+        totalBytes: sourceModelFile.size,
+        uploadedBytes: sourceModelFile.size,
+        percent: 100,
+        totalParts: LOD_VARIANTS.length,
+        completedParts: LOD_VARIANTS.length,
+        currentPart: null,
+        statusText: 'Reusing existing device LODs',
+        parts: [],
+      })
+      return existingManifest
+    }
+
+    setUploadProgress({
+      phase: 'optimizing',
+      fileName: sourceModelFile.name,
+      totalBytes: sourceModelFile.size,
+      uploadedBytes: 0,
+      percent: 1,
+      totalParts: LOD_VARIANTS.length,
+      completedParts: 0,
+      currentPart: null,
+      statusText: 'Generating device LODs in parallel',
+      parts: [],
+    })
+
+    const result = await uploadOptimizedAsset(sourceModelFile, {
+      onProgress: (event) => setUploadProgress(formatAssetLodProgress(sourceModelFile, event)),
+      options: {
+        geometryCompression: 'meshopt',
+        textureMode: 'ktx2',
+      },
+    })
+    const manifest = result.manifest
+
+    setSceneConfig((prev) => ({ ...prev, assetManifest: manifest }))
+    setUploadProgress({
+      phase: 'done',
+      fileName: 'Device LOD manifest',
+      totalBytes: sourceModelFile.size,
+      uploadedBytes: sourceModelFile.size,
+      percent: 100,
+      totalParts: LOD_VARIANTS.length,
+      completedParts: LOD_VARIANTS.length,
+      currentPart: null,
+      statusText: 'Device LODs ready in Supabase Storage',
+      parts: [],
+    })
+
+    return manifest
+  }, [sceneConfig.assetManifest, sceneConfig.assets?.assetManifest, sceneConfig.model?.assetManifest])
 
   // ─── Part Interactions ──────────────────────────────────────────────────
   const handlePartClick = useCallback((part) => {
@@ -733,11 +837,36 @@ export default function EditorPage({ initialPublishId = '' }) {
         throw new Error('Publish ID is not ready yet. Please try again.')
       }
 
-      // Step 1: Uploading model
-      setPublishProgress(buildPublishProgress(1))
-
       const uploadId = createUploadId()
       const sourceModelFile = modelFileRef.current
+
+      // Step 1: Preparing device LODs
+      setPublishProgress(buildPublishProgress(1))
+
+      let assetManifest = null
+      let assetManifestWarning = null
+      try {
+        assetManifest = await ensurePublishAssetManifest(sourceModelFile)
+      } catch (err) {
+        assetManifestWarning = err?.message || String(err)
+        console.warn('[Editor Publish] Device LOD generation skipped:', assetManifestWarning)
+        setUploadProgress({
+          phase: 'warning',
+          fileName: sourceModelFile.name,
+          totalBytes: sourceModelFile.size,
+          uploadedBytes: 0,
+          percent: 100,
+          totalParts: LOD_VARIANTS.length,
+          completedParts: 0,
+          currentPart: null,
+          statusText: `LOD generation skipped: ${assetManifestWarning}`,
+          parts: [],
+        })
+      }
+
+      // Step 2: Uploading model
+      setPublishProgress(buildPublishProgress(2))
+
       const optimized = await optimizePublishModelFile(sourceModelFile, {
         onProgress: setUploadProgress,
         options: { textureMode: 'ktx2', maxTextureSize: 2048 },
@@ -780,16 +909,16 @@ export default function EditorPage({ initialPublishId = '' }) {
         }
       }
 
-      // Step 2: Uploading textures / resources
-      setPublishProgress(buildPublishProgress(2))
+      // Step 3: Uploading textures / resources
+      setPublishProgress(buildPublishProgress(3))
 
       const resourceEntries = droppedFilesRef.current.filter((entry) => (
         entry.file !== modelFileRef.current
       ))
       const resourcePaths = resourceEntries.map((entry) => entry.path || entry.file.name)
 
-      // Step 3: Finalizing scene (building formData + calling publish API)
-      setPublishProgress(buildPublishProgress(3))
+      // Step 4: Finalizing scene (building formData + calling publish API)
+      setPublishProgress(buildPublishProgress(4))
 
       // Build the full scene config including normalization data.
       // combinedScale, centerOffset, groundOffset, rotation are the exact values
@@ -797,6 +926,11 @@ export default function EditorPage({ initialPublishId = '' }) {
       const normResult = importResult.normResult ?? {}
       const configPayload = {
         ...sceneConfig,
+        assetManifest,
+        performance: {
+          ...(sceneConfig.performance ?? {}),
+          ...(assetManifestWarning ? { lodWarning: assetManifestWarning } : {}),
+        },
         parts: importResult.registry?.serialize?.() ?? [],
         import: {
           // Fields used directly by applyNormalization in FrameCanvas:
@@ -890,7 +1024,7 @@ export default function EditorPage({ initialPublishId = '' }) {
     } finally {
       setIsPublishing(false)
     }
-  }, [clearPublishTimers, failPublishProgress, finishPublishProgress, importResult, isEditingExistingPublish, publishId, requestPublishId, router, sceneConfig, testKey])
+  }, [clearPublishTimers, ensurePublishAssetManifest, failPublishProgress, finishPublishProgress, importResult, isEditingExistingPublish, publishId, requestPublishId, router, sceneConfig, testKey])
 
   const handleReset = useCallback(() => {
     if (importResult?._blobUrls) {

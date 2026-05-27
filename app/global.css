@@ -1947,6 +1947,26 @@
   inset: 0;
 }
 
+.frame-fps-badge {
+  position: absolute;
+  top: max(8px, env(safe-area-inset-top));
+  left: max(8px, env(safe-area-inset-left));
+  z-index: 70;
+  pointer-events: none;
+  min-width: 44px;
+  padding: 4px 6px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 6px;
+  background: rgba(3, 7, 18, 0.58);
+  color: rgba(255, 255, 255, 0.78);
+  font: 600 10px/1 var(--font-mono);
+  letter-spacing: 0;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}
+
 .frame-controls {
   position: absolute;
   left: 50%;

@@ -54,6 +54,7 @@ function normalizeSnapshotUrls(snapshot) {
   if (fixed.assetManifest && typeof fixed.assetManifest === 'object') {
     fixed.assetManifest = {
       ...fixed.assetManifest,
+      manifestUrl: fixLegacyStorageUrl(fixed.assetManifest.manifestUrl),
       lods: fixLodList(fixed.assetManifest.lods),
     }
   }
@@ -62,6 +63,7 @@ function normalizeSnapshotUrls(snapshot) {
       ...fixed.model,
       assetManifest: {
         ...fixed.model.assetManifest,
+        manifestUrl: fixLegacyStorageUrl(fixed.model.assetManifest.manifestUrl),
         lods: fixLodList(fixed.model.assetManifest.lods),
       },
     }
@@ -71,6 +73,7 @@ function normalizeSnapshotUrls(snapshot) {
       ...fixed.assets,
       assetManifest: {
         ...fixed.assets.assetManifest,
+        manifestUrl: fixLegacyStorageUrl(fixed.assets.assetManifest.manifestUrl),
         lods: fixLodList(fixed.assets.assetManifest.lods),
       },
     }

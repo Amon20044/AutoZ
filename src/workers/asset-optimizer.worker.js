@@ -84,6 +84,17 @@ async function encodeTexturesToKTX2(doc, options = {}) {
   return converted
 }
 
+function getTextureResizeOptions(lod, textureMode) {
+  const isTiny = lod.maxTextureSize <= 512
+  return {
+    targetFormat: textureMode === 'ktx2' ? 'png' : 'webp',
+    resize: [lod.maxTextureSize, lod.maxTextureSize],
+    resizeFilter: TextureResizeFilter.LANCZOS2,
+    quality: isTiny ? 72 : 82,
+    effort: 50,
+  }
+}
+
 function createIo() {
   return new WebIO()
     .registerExtensions([EXTMeshoptCompression, KHRTextureBasisu])
@@ -95,19 +106,14 @@ function createIo() {
 async function optimizeLod({ buffer, lod, geometryCompression, textureMode }) {
   const io = createIo()
   const doc = await io.readBinary(new Uint8Array(buffer))
+  let actualTextureMode = textureMode === 'none' ? 'source' : textureMode
   const transforms = [
     dedup(),
     prune(),
   ]
 
   if (textureMode !== 'none') {
-    transforms.push(textureCompress({
-      targetFormat: 'webp',
-      resize: [lod.maxTextureSize, lod.maxTextureSize],
-      resizeFilter: TextureResizeFilter.LANCZOS2,
-      quality: lod.maxTextureSize <= 512 ? 72 : 82,
-      effort: 50,
-    }))
+    transforms.push(textureCompress(getTextureResizeOptions(lod, textureMode)))
   }
 
   transforms.push(
@@ -133,11 +139,26 @@ async function optimizeLod({ buffer, lod, geometryCompression, textureMode }) {
   }
 
   await doc.transform(...transforms)
+
+  if (textureMode === 'ktx2') {
+    try {
+      await encodeTexturesToKTX2(doc)
+      actualTextureMode = 'ktx2'
+    } catch {
+      actualTextureMode = 'webp-fallback'
+      await doc.transform(textureCompress({
+        ...getTextureResizeOptions(lod, 'webp'),
+        quality: lod.maxTextureSize <= 512 ? 70 : 80,
+      }))
+    }
+  }
+
   const triangles = countTriangles(doc)
   const output = await io.writeBinary(doc)
   return {
     blob: new Blob([output], { type: 'model/gltf-binary' }),
     triangles,
+    textureMode: actualTextureMode,
   }
 }
 
@@ -145,10 +166,12 @@ async function optimizePublishModel(message) {
   cancelled = false
   const { fileName, buffer, options = {} } = message
   const textureMode = options.textureMode || 'ktx2'
+  const geometryCompression = options.geometryCompression || 'meshopt'
   const maxTextureSize = options.maxTextureSize || 2048
   let actualTextureMode = textureMode
 
   postProgress('read', 0.04, 'Reading GLB')
+  await MeshoptEncoder.ready
   const io = createIo()
   const doc = await io.readBinary(new Uint8Array(buffer))
   const before = {
@@ -184,6 +207,10 @@ async function optimizePublishModel(message) {
     prune(),
   )
 
+  if (geometryCompression === 'meshopt') {
+    transforms.push(meshopt({ encoder: MeshoptEncoder }))
+  }
+
   postProgress('geometry', 0.55, 'Packing geometry')
   await doc.transform(...transforms)
   if (cancelled) return
@@ -215,6 +242,7 @@ async function optimizePublishModel(message) {
         }),
         resample(),
         prune(),
+        ...(geometryCompression === 'meshopt' ? [meshopt({ encoder: MeshoptEncoder })] : []),
       )
       const fallbackOutput = await io.writeBinary(fallbackDoc)
       const fallbackBlob = new Blob([fallbackOutput], { type: 'model/gltf-binary' })
@@ -231,7 +259,7 @@ async function optimizePublishModel(message) {
           materialCount: before.materialCount,
           textureCount: before.textureCount,
           compression: {
-            geometry: 'quantized',
+            geometry: geometryCompression === 'meshopt' ? 'meshopt' : 'quantized',
             textures: 'webp',
             textureFallback: 'webp',
             requestedTextures: 'ktx2',
@@ -260,7 +288,7 @@ async function optimizePublishModel(message) {
       materialCount: before.materialCount,
       textureCount: before.textureCount,
       compression: {
-        geometry: 'quantized',
+        geometry: geometryCompression === 'meshopt' ? 'meshopt' : 'quantized',
         textures: actualTextureMode === 'none' ? 'source' : actualTextureMode,
         textureFallback: actualTextureMode === 'none' ? 'source' : 'webp',
       },
@@ -269,11 +297,72 @@ async function optimizePublishModel(message) {
   postProgress('done', 1, 'Optimized model ready')
 }
 
+async function analyzeAsset(message) {
+  cancelled = false
+  const { buffer } = message
+
+  postProgress('read', 0.02, 'Reading GLB')
+  await MeshoptEncoder.ready
+  await MeshoptSimplifier.ready
+
+  const inspectDoc = await createIo().readBinary(new Uint8Array(buffer))
+  if (cancelled) return
+
+  const stats = inspectStats(inspectDoc)
+  postProgress('inspect', 1, `${stats.originalTriangles.toLocaleString()} triangles`)
+  self.postMessage({ type: 'ASSET_ANALYZED', stats })
+}
+
+async function processAssetLod(message) {
+  cancelled = false
+  const { buffer, options = {}, lodId } = message
+  const geometryCompression = options.geometryCompression || 'meshopt'
+  const textureMode = options.textureMode || 'ktx2'
+  const lod = LOD_VARIANTS.find((entry) => entry.id === lodId)
+
+  if (!lod) throw new Error(`Unknown LOD "${lodId}".`)
+
+  postProgress(lod.id, 0.02, `Generating ${lod.id}`)
+  await MeshoptEncoder.ready
+  await MeshoptSimplifier.ready
+  if (cancelled) return
+
+  let result
+  try {
+    result = await optimizeLod({ buffer, lod, geometryCompression, textureMode })
+  } catch (err) {
+    postProgress(lod.id, 0.35, `${lod.id} optimization fallback: ${err.message}`)
+    result = {
+      blob: new Blob([buffer.slice(0)], { type: 'model/gltf-binary' }),
+      triangles: 0,
+      textureMode: 'source',
+    }
+  }
+
+  if (cancelled) return
+
+  const metadata = {
+    lodId: lod.id,
+    bytes: result.blob.size,
+    triangles: result.triangles,
+    maxTextureSize: lod.maxTextureSize,
+    textureFormat: result.textureMode,
+  }
+
+  self.postMessage({
+    type: 'LOD_READY',
+    fileKey: lod.key,
+    blob: result.blob,
+    metadata,
+  })
+  postProgress(lod.id, 1, `${lod.id} ready`)
+}
+
 async function processAsset(message) {
   cancelled = false
   const { fileName, buffer, options = {}, assetId, publicUrls = {} } = message
   const geometryCompression = options.geometryCompression || 'meshopt'
-  const textureMode = options.textureMode || 'webp'
+  const textureMode = options.textureMode || 'ktx2'
 
   postProgress('read', 0.02, 'Reading GLB')
   await MeshoptEncoder.ready
@@ -302,6 +391,7 @@ async function processAsset(message) {
       result = {
         blob: new Blob([buffer.slice(0)], { type: 'model/gltf-binary' }),
         triangles: stats.originalTriangles,
+        textureMode: 'source',
       }
     }
 
@@ -309,6 +399,7 @@ async function processAsset(message) {
       bytes: result.blob.size,
       triangles: result.triangles,
       maxTextureSize: lod.maxTextureSize,
+      textureFormat: result.textureMode,
     }
 
     self.postMessage({
@@ -320,6 +411,7 @@ async function processAsset(message) {
         bytes: result.blob.size,
         triangles: result.triangles,
         maxTextureSize: lod.maxTextureSize,
+        textureFormat: result.textureMode,
       },
     })
 
@@ -338,7 +430,7 @@ async function processAsset(message) {
     stats,
     compression: {
       geometry: geometryCompression,
-      textures: textureMode === 'none' ? 'source' : 'webp',
+      textures: textureMode === 'none' ? 'source' : textureMode,
       textureFallback: textureMode === 'none' ? 'source' : 'webp',
     },
   })
@@ -368,6 +460,14 @@ self.onmessage = (event) => {
 
   if (message?.type === 'PROCESS_ASSET') {
     processAsset(message).catch((err) => {
+      self.postMessage({ type: 'ERROR', error: err.message || String(err) })
+    })
+  } else if (message?.type === 'PROCESS_ASSET_ANALYZE') {
+    analyzeAsset(message).catch((err) => {
+      self.postMessage({ type: 'ERROR', error: err.message || String(err) })
+    })
+  } else if (message?.type === 'PROCESS_ASSET_LOD') {
+    processAssetLod(message).catch((err) => {
       self.postMessage({ type: 'ERROR', error: err.message || String(err) })
     })
   } else if (message?.type === 'PROCESS_PUBLISH_MODEL') {

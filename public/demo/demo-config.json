@@ -1,16 +1,79 @@
 {
-  "version": 1,
-  "slug": "demo-landing",
-  "model": {
-    "url": "/Fortuner-compressed.glb",
-    "fileName": "Fortuner-compressed.glb",
-    "path": "Fortuner-compressed.glb",
-    "fileSize": 0,
-    "contentType": "model/gltf-binary"
+  "environment": {
+    "preset": "studio",
+    "background": false,
+    "backgroundColor": "#0b0e14"
   },
-  "runtimeAssets": [],
-  "thumbnail": null,
-  "textureAssets": [],
+  "lighting": {
+    "intensity": 1,
+    "ambient": {
+      "enabled": true,
+      "color": "#ffffff",
+      "intensity": 0.42
+    },
+    "lights": [
+      {
+        "type": "directional",
+        "position": [
+          4.5,
+          6.5,
+          -4.5
+        ],
+        "intensity": 2.7,
+        "color": "#ffffff",
+        "castShadow": true,
+        "mapSize": 2048
+      },
+      {
+        "type": "directional",
+        "position": [
+          -5,
+          3.5,
+          4
+        ],
+        "intensity": 0.9,
+        "color": "#dbeafe"
+      },
+      {
+        "type": "directional",
+        "position": [
+          0,
+          4.5,
+          6
+        ],
+        "intensity": 1.35,
+        "color": "#ffffff"
+      }
+    ]
+  },
+  "fog": {
+    "enabled": false,
+    "color": "#0b0e14",
+    "near": 8,
+    "far": 34
+  },
+  "stage": {
+    "backgroundColor": "#0b0e14",
+    "shadows": true,
+    "radialFloorEnabled": true,
+    "radialFloorColor": "#9aa8bf",
+    "radialFloorOpacity": 0.42,
+    "radialFloorInner": 0.14,
+    "radialFloorOuter": 1.08,
+    "shadowOpacity": 0.52,
+    "shadowCatcherOpacity": 0.24,
+    "shadowBlur": 2.2,
+    "shadowFar": 8.5,
+    "shadowScale": 11,
+    "shadowResolution": 1024,
+    "shadowColor": "#1f2937",
+    "environmentIntensity": 1.18,
+    "backgroundIntensity": 0.75
+  },
+  "animation": {
+    "autoRotate": true,
+    "rotateSpeed": 0.32
+  },
   "import": {
     "combinedScale": 1.276545027972997,
     "centerOffset": [
@@ -50,6 +113,146 @@
         3
       ]
     }
+  },
+  "camera": {
+    "fov": 40,
+    "position": [
+      5,
+      3,
+      -7
+    ],
+    "frame": {
+      "selectedMode": "auto",
+      "mobileDistanceMultiplier": 1.4,
+      "editorPreviewDevice": "desktop",
+      "editorPanEnabled": true,
+      "presets": {
+        "auto": {
+          "offset": [
+            0,
+            0,
+            0
+          ],
+          "targetOffset": [
+            0,
+            0,
+            0
+          ],
+          "distanceScale": 1
+        },
+        "cockpit": {
+          "offset": [
+            0,
+            0,
+            0
+          ],
+          "targetOffset": [
+            0,
+            0,
+            0
+          ],
+          "distanceScale": 1
+        },
+        "top": {
+          "offset": [
+            0,
+            0,
+            0
+          ],
+          "targetOffset": [
+            0,
+            0,
+            0
+          ],
+          "distanceScale": 1
+        },
+        "side": {
+          "offset": [
+            0,
+            0,
+            0
+          ],
+          "targetOffset": [
+            0,
+            0,
+            0
+          ],
+          "distanceScale": 1
+        },
+        "back": {
+          "offset": [
+            0,
+            0,
+            0
+          ],
+          "targetOffset": [
+            0,
+            0,
+            0
+          ],
+          "distanceScale": 1
+        },
+        "frontAngle": {
+          "offset": [
+            0,
+            0,
+            0
+          ],
+          "targetOffset": [
+            0,
+            0,
+            0
+          ],
+          "distanceScale": 1
+        },
+        "rearAngle": {
+          "offset": [
+            0,
+            0,
+            0
+          ],
+          "targetOffset": [
+            0,
+            0,
+            0
+          ],
+          "distanceScale": 1
+        }
+      }
+    }
+  },
+  "postprocessing": {
+    "enabled": true,
+    "glare": 0.35,
+    "grain": 0.06,
+    "vignette": 0.18,
+    "exposure": 1.08,
+    "contrast": 1.08,
+    "saturation": 1.04,
+    "bloomThreshold": 0.62,
+    "bloomIntensity": 0.32,
+    "sharpness": 0.1,
+    "chromaticAberration": 0.0007
+  },
+  "version": 1,
+  "slug": "demo-landing",
+  "model": {
+    "url": "/Fortuner-compressed.glb",
+    "fileName": "Fortuner-compressed.glb",
+    "path": "Fortuner-compressed.glb",
+    "contentType": "model/gltf-binary"
+  },
+  "runtimeAssets": [],
+  "thumbnail": null,
+  "textureAssets": [],
+  "materials": [],
+  "assetManifest": null,
+  "branding": {
+    "watermark": true,
+    "text": "made in AutoZ"
+  },
+  "performance": {
+    "preset": "high"
   },
   "parts": [
     {
@@ -300,7 +503,7 @@
         1.7574209220222836,
         0.8748229558752424
       ],
-      "openAngle": 45,
+      "openAngle": 80,
       "closeAngle": 0,
       "lambda": 8,
       "spinSpeed": 5.5,
@@ -352,7 +555,7 @@
         1.7574209220222836,
         0.8748233172933038
       ],
-      "openAngle": 45,
+      "openAngle": -80,
       "closeAngle": 0,
       "lambda": 8,
       "spinSpeed": 5.5,
@@ -677,14 +880,14 @@
       "pivot": [
         1.5093758971526643,
         1.3906832295222302,
-        -1.9404790075201337
+        -2.0704790075201336
       ],
       "pivotOffset": [
         0,
         0,
-        0.13
+        0
       ],
-      "pivotSource": "offset",
+      "pivotSource": "origin",
       "axis": [
         0,
         1,
@@ -700,7 +903,7 @@
         1.5023730048285255,
         -2.0704790075201336
       ],
-      "openAngle": -90,
+      "openAngle": 90,
       "closeAngle": 0,
       "lambda": 8,
       "spinSpeed": 5.5,
@@ -772,15 +975,15 @@
       ],
       "pivot": [
         0.41082332956774054,
-        1.3644557320448014,
-        1.3524344324229893
+        1.4644557320448015,
+        2.1124344324229893
       ],
       "pivotOffset": [
         0,
-        -0.1,
-        -0.76
+        0,
+        0
       ],
-      "pivotSource": "offset",
+      "pivotSource": "origin",
       "axis": [
         1,
         0,
@@ -796,7 +999,7 @@
         1.6059432946012433,
         2.1124344324229893
       ],
-      "openAngle": -59.99999999999999,
+      "openAngle": -65,
       "closeAngle": 0,
       "lambda": 8,
       "spinSpeed": 5.5,
@@ -945,7 +1148,7 @@
         "hinge_open_close"
       ],
       "visibleInUI": true,
-      "animationEnabled": false,
+      "animationEnabled": true,
       "material": null
     },
     {
@@ -997,7 +1200,7 @@
         "hinge_open_close"
       ],
       "visibleInUI": true,
-      "animationEnabled": false,
+      "animationEnabled": true,
       "material": null
     },
     {
@@ -1016,15 +1219,15 @@
       ],
       "pivot": [
         0.41336262433432586,
-        2.0407990385214334,
-        -2.4697204648145696
+        1.5107990385214334,
+        -2.7297204648145694
       ],
       "pivotOffset": [
         0,
-        0.53,
-        0.26
+        0,
+        0
       ],
-      "pivotSource": "offset",
+      "pivotSource": "origin",
       "axis": [
         1,
         0,
@@ -1040,7 +1243,7 @@
         2.184515939807854,
         -2.630251513179629
       ],
-      "openAngle": 68,
+      "openAngle": -65,
       "closeAngle": 0,
       "lambda": 8,
       "spinSpeed": 5.5,
@@ -1365,210 +1568,5 @@
       "material": null
     }
   ],
-  "materials": [],
-  "assetManifest": null,
-  "lighting": {
-    "intensity": 1,
-    "ambient": {
-      "enabled": true,
-      "color": "#ffffff",
-      "intensity": 0.68
-    },
-    "lights": [
-      {
-        "type": "directional",
-        "position": [
-          4.5,
-          6.5,
-          -4.5
-        ],
-        "intensity": 3.6,
-        "color": "#ffffff",
-        "castShadow": true,
-        "mapSize": 2048
-      },
-      {
-        "type": "directional",
-        "position": [
-          -5,
-          3.5,
-          4
-        ],
-        "intensity": 1.4,
-        "color": "#cfe1ff"
-      },
-      {
-        "type": "directional",
-        "position": [
-          0,
-          4.5,
-          6
-        ],
-        "intensity": 1.7,
-        "color": "#ffffff"
-      }
-    ]
-  },
-  "environment": {
-    "preset": "studio",
-    "background": false,
-    "backgroundColor": "#0b0e14"
-  },
-  "camera": {
-    "fov": 41,
-    "position": [
-      5,
-      3,
-      -7
-    ],
-    "frame": {
-      "selectedMode": "auto",
-      "mobileDistanceMultiplier": 1.4,
-      "editorPreviewDevice": "desktop",
-      "editorPanEnabled": true,
-      "presets": {
-        "auto": {
-          "offset": [
-            0,
-            -0.6,
-            0
-          ],
-          "targetOffset": [
-            0,
-            -2.15,
-            0
-          ],
-          "distanceScale": 0.85
-        },
-        "cockpit": {
-          "offset": [
-            -0.5,
-            -0.1,
-            -4
-          ],
-          "targetOffset": [
-            0.35,
-            -1.1,
-            1.45
-          ],
-          "distanceScale": 1
-        },
-        "top": {
-          "offset": [
-            1.45,
-            -0.4,
-            -0.35
-          ],
-          "targetOffset": [
-            1.85,
-            -1.35,
-            -0.5
-          ],
-          "distanceScale": 1
-        },
-        "side": {
-          "offset": [
-            0,
-            0,
-            0
-          ],
-          "targetOffset": [
-            0,
-            -2,
-            0
-          ],
-          "distanceScale": 1
-        },
-        "back": {
-          "offset": [
-            0,
-            0,
-            0
-          ],
-          "targetOffset": [
-            0.35,
-            -3.05,
-            1.9
-          ],
-          "distanceScale": 1
-        },
-        "frontAngle": {
-          "offset": [
-            0,
-            0,
-            0
-          ],
-          "targetOffset": [
-            0.6,
-            -2.05,
-            0
-          ],
-          "distanceScale": 1
-        },
-        "rearAngle": {
-          "offset": [
-            0,
-            0,
-            0
-          ],
-          "targetOffset": [
-            0.9,
-            -2.05,
-            -0.05
-          ],
-          "distanceScale": 1
-        }
-      }
-    },
-    "autoFit": true
-  },
-  "stage": {
-    "backgroundColor": "#0b0e14",
-    "shadows": true,
-    "radialFloorEnabled": true,
-    "radialFloorColor": "#7a8cb3",
-    "radialFloorOpacity": 0.5,
-    "radialFloorInner": 0.14,
-    "radialFloorOuter": 1.12,
-    "shadowOpacity": 0.62,
-    "shadowCatcherOpacity": 0.32,
-    "shadowBlur": 2.2,
-    "shadowFar": 8.5,
-    "shadowScale": 11,
-    "shadowResolution": 1024,
-    "shadowColor": "#0d1322",
-    "environmentIntensity": 1.55,
-    "backgroundIntensity": 1
-  },
-  "animation": {
-    "autoRotate": true,
-    "rotateSpeed": 0.4
-  },
-  "fog": {
-    "enabled": false,
-    "color": "#0b0e14",
-    "near": 8,
-    "far": 34
-  },
-  "postprocessing": {
-    "enabled": true,
-    "glare": 0.45,
-    "grain": 0.09,
-    "vignette": 0.32,
-    "exposure": 1.4,
-    "contrast": 1.15,
-    "saturation": 1.4,
-    "bloomThreshold": 0.72,
-    "bloomIntensity": 0.3,
-    "sharpness": 0.04,
-    "chromaticAberration": 0.0004
-  },
-  "performance": {
-    "preset": "high"
-  },
-  "branding": {
-    "watermark": true,
-    "text": "made in AutoZ"
-  },
-  "publishedAt": "2026-05-27T20:18:33.388Z"
+  "publishedAt": "2026-05-27T21:29:31.017Z"
 }

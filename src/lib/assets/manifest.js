@@ -47,6 +47,7 @@ export function createBaseAssetManifest({
       device: lod.device,
       triangleRatio: lod.triangleRatio,
       maxTextureSize: lod.maxTextureSize,
+      textureFormat: lodMetadata[lod.id]?.textureFormat || compression.textures || 'webp',
       distanceMin: lod.distanceMin,
       distanceMax: lod.distanceMax,
       bytes: lodMetadata[lod.id]?.bytes || 0,
@@ -64,6 +65,7 @@ export function createBaseAssetManifest({
           {
             triangles: meta.triangles || 0,
             bytes: meta.bytes || 0,
+            textureFormat: meta.textureFormat || compression.textures || 'webp',
           },
         ]),
       ),
