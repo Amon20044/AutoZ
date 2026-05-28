@@ -33,15 +33,15 @@ export function getPlatformTestKey() {
 export function verifyTestKey(headerValue) {
   const expected = getPlatformTestKey()
   if (!expected) {
-    return { ok: false, reason: 'Server is missing PLATFORM_TEST_KEY. Ask the platform admin to provision a tester key.' }
+    return { ok: false, reason: 'Server is missing PLATFORM_TEST_KEY. Ask the platform admin to provision a Pre-Register Key.' }
   }
   const provided = typeof headerValue === 'string' ? headerValue.trim() : ''
-  if (!provided) return { ok: false, reason: 'Test key is required to publish.' }
-  if (provided.length !== expected.length) return { ok: false, reason: 'Invalid test key.' }
+  if (!provided) return { ok: false, reason: 'Pre-Register Key is required to publish.' }
+  if (provided.length !== expected.length) return { ok: false, reason: 'Invalid Pre-Register Key.' }
   try {
     const ok = timingSafeEqual(Buffer.from(provided, 'utf8'), Buffer.from(expected, 'utf8'))
-    return ok ? { ok: true } : { ok: false, reason: 'Invalid test key.' }
+    return ok ? { ok: true } : { ok: false, reason: 'Invalid Pre-Register Key.' }
   } catch {
-    return { ok: false, reason: 'Invalid test key.' }
+    return { ok: false, reason: 'Invalid Pre-Register Key.' }
   }
 }

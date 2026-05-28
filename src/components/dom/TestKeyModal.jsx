@@ -25,7 +25,7 @@ export function writeStoredTestKey(key) {
 }
 
 /**
- * Modal that asks for the tester key before a publish attempt.
+ * Modal that asks for the Pre-Register Key before a publish attempt.
  * Resolves with { key } on submit, or null on cancel.
  */
 export default function TestKeyModal({
@@ -63,9 +63,9 @@ export default function TestKeyModal({
         <div className='test-key-icon'>
           <ShieldCheck size={20} strokeWidth={2} aria-hidden='true' />
         </div>
-        <h2 id='test-key-title'>Tester key required</h2>
+        <h2 id='test-key-title'>Enter your Pre-Register Key</h2>
         <p>
-          Publishing on the AutoZ platform is gated by a tester key. Paste the key you were issued —
+          Publishing on the AutoZ platform is gated by a Pre-Register Key. Paste the key you were issued —
           we&apos;ll cache it on this device for the rest of the session.
         </p>
         <label className='test-key-input-row'>
@@ -75,7 +75,7 @@ export default function TestKeyModal({
             type='password'
             spellCheck={false}
             autoComplete='off'
-            placeholder='paste tester key'
+            placeholder='paste Pre-Register Key'
             value={value}
             onChange={(e) => setValue(e.target.value)}
             disabled={submitting}

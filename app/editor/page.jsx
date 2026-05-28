@@ -990,7 +990,7 @@ export default function EditorPage({ initialPublishId = '' }) {
           // Test-key gate: surface the modal and abort the publish cleanly.
           // Saved upload progress stays visible so the user knows nothing was lost.
           failPublishProgress()
-          setTestKeyModal({ error: json.error || 'A tester key is required to publish.', submitting: false })
+          setTestKeyModal({ error: json.error || 'A Pre-Register Key is required to publish.', submitting: false })
           setIsPublishing(false)
           return
         }
@@ -1019,12 +1019,25 @@ export default function EditorPage({ initialPublishId = '' }) {
       failPublishProgress()
       setUploadProgress((prev) => prev ? { ...prev, phase: 'error', statusText: err.message } : prev)
       setError(err.message)
-      // Non-auth failure — close the test-key modal so the user sees the real error.
+      // Non-auth failure — close the Pre-Register Key modal so the user sees the real error.
       setTestKeyModal(null)
     } finally {
       setIsPublishing(false)
     }
   }, [clearPublishTimers, ensurePublishAssetManifest, failPublishProgress, finishPublishProgress, importResult, isEditingExistingPublish, publishId, requestPublishId, router, sceneConfig, testKey])
+
+  // Guarded publish entry point: a Pre-Register Key is captured up front so the
+  // expensive work (LOD generation, model + texture uploads) only kicks off
+  // once we actually have a key. A cached key skips straight to publishing; the
+  // server-side 401 fallback still re-prompts if that key turns out to be stale.
+  const requestPublish = useCallback(() => {
+    if (isPublishing || isAllocatingPublishId) return
+    if (!testKey) {
+      setTestKeyModal({ error: null, submitting: false })
+      return
+    }
+    handlePublish(testKey)
+  }, [handlePublish, isAllocatingPublishId, isPublishing, testKey])
 
   const handleReset = useCallback(() => {
     if (importResult?._blobUrls) {
@@ -1092,7 +1105,7 @@ export default function EditorPage({ initialPublishId = '' }) {
               </button>
               <button
                 className='az-btn az-btn--primary'
-                onClick={handlePublish}
+                onClick={requestPublish}
                 disabled={isPublishing || isAllocatingPublishId}
               >
                 {isPublishing
@@ -1228,7 +1241,7 @@ export default function EditorPage({ initialPublishId = '' }) {
           <EditorSettingsPanel
             config={sceneConfig}
             onChange={handleConfigChange}
-            onPublish={handlePublish}
+            onPublish={requestPublish}
             isPublishing={isPublishing}
             publishId={publishId}
             publishIdError={publishIdError}
@@ -1290,8 +1303,11 @@ export default function EditorPage({ initialPublishId = '' }) {
         submitting={Boolean(testKeyModal?.submitting)}
         onCancel={() => setTestKeyModal(null)}
         onSubmit={(nextKey) => {
+          // Capture the key, dismiss the modal, then run the full pipeline so the
+          // panel shows real LOD/upload progress. An invalid key re-opens the
+          // modal via the 401 handler in handlePublish.
           setTestKey(nextKey)
-          setTestKeyModal({ error: null, submitting: true })
+          setTestKeyModal(null)
           handlePublish(nextKey)
         }}
       />
