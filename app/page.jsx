@@ -54,7 +54,7 @@ const FEATURES = [
 ]
 
 const HERO_METRICS = [
-  ['10 min', 'from GLB to live iframe'],
+  ['10 min', 'from Static GLB to live iframe'],
   ['$35k+', 'saved per custom viewer'],
   ['0 code', 'for updates after launch'],
 ]
@@ -136,24 +136,12 @@ export default function LandingPage() {
 
       <section className='landing-hero-v2'>
         <div className='landing-hero-copy'>
-          <h1>Turn any 3D car model into a sellable web experience.</h1>
+          <h1>Turn any 3D car model into a Immersive Customer Experience</h1>
           <p>
             AutoZ gives brands, studios, and dealerships a premium 3D configurator pipeline:
             upload a GLB, auto-detect parts, tune materials and cameras, then publish a stable iframe
             your sales team can embed anywhere.
           </p>
-          <div className='landing-actions'>
-            <Link href='/editor' className='landing-primary'>Launch Studio <Rocket size={16} /></Link>
-            <a href='#pricing' className='landing-secondary'><Play size={15} /> See the offer</a>
-          </div>
-          <div className='landing-hero-proof' aria-label='AutoZ business metrics'>
-            {HERO_METRICS.map(([value, label]) => (
-              <div key={label}>
-                <strong>{value}</strong>
-                <span>{label}</span>
-              </div>
-            ))}
-          </div>
           <div className='landing-trust' aria-label='Customer trust'>
             <div className='landing-trust-avatars' aria-hidden='true'>
               {['AZ', 'EV', '3D', 'GT', 'XR'].map((label) => <span key={label}>{label}</span>)}
@@ -168,6 +156,19 @@ export default function LandingPage() {
               </p>
             </div>
           </div>
+          <div className='landing-actions'>
+            <Link href='/editor' className='landing-primary'>Launch Studio <Rocket size={16} /></Link>
+            <a href='#pricing' className='landing-secondary'><Play size={15} /> See the offer</a>
+          </div>
+          <div className='landing-hero-proof' aria-label='AutoZ business metrics'>
+            {HERO_METRICS.map(([value, label]) => (
+              <div key={label}>
+                <strong>{value}</strong>
+                <span>{label}</span>
+              </div>
+            ))}
+          </div>
+
         </div>
         <div className='demo-stage'>
           <div className='demo-signals' aria-label='Live runtime signals'>
@@ -197,6 +198,10 @@ export default function LandingPage() {
             </div>
           </div>
           <div className={`demo-frame-wrap ${demoReady ? 'is-ready' : ''}`} aria-label='Interactive 3D car demo'>
+            <div className='demo-frame-topbar'>
+              <span><i /> Live Fortuner demo</span>
+              <span>Interactive showroom</span>
+            </div>
             <iframe
               src='/frame/demo'
               title='AutoZ live car viewer'

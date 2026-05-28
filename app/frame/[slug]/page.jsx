@@ -114,31 +114,31 @@ export default function FramePage() {
 
   useEffect(() => {
     if (!slug) return
-    ;(async () => {
-      try {
-        if (slug === DEMO_SLUG) {
-          // `no-store` + a cache-busting query param: the demo JSON is the
-          // single source of truth for the landing iframe and gets rewritten
-          // by the local editor. force-cache was serving stale snapshots
-          // even after a save, so the model loaded but parts/normalization
-          // never reflected the latest config.
-          const config = await loadDemoSnapshot()
-          setSnapshot(config)
-          setProjectName('AutoZ Demo')
-          return
-        }
+      ; (async () => {
+        try {
+          if (slug === DEMO_SLUG) {
+            // `no-store` + a cache-busting query param: the demo JSON is the
+            // single source of truth for the landing iframe and gets rewritten
+            // by the local editor. force-cache was serving stale snapshots
+            // even after a save, so the model loaded but parts/normalization
+            // never reflected the latest config.
+            const config = await loadDemoSnapshot()
+            setSnapshot(config)
+            setProjectName('AutoZ Demo')
+            return
+          }
 
-        const res = await fetch(`/api/project/${slug}`)
-        const json = await res.json()
-        if (!res.ok) throw new Error(json.error || 'Failed to load')
-        setSnapshot(json.publish.snapshot)
-        setProjectName(json.publish.projectName)
-      } catch (err) {
-        setError(err.message)
-      } finally {
-        setLoading(false)
-      }
-    })()
+          const res = await fetch(`/api/project/${slug}`)
+          const json = await res.json()
+          if (!res.ok) throw new Error(json.error || 'Failed to load')
+          setSnapshot(json.publish.snapshot)
+          setProjectName(json.publish.projectName)
+        } catch (err) {
+          setError(err.message)
+        } finally {
+          setLoading(false)
+        }
+      })()
   }, [slug])
 
   if (error) {
@@ -163,7 +163,7 @@ export default function FramePage() {
       {/* Watermark */}
       <a
         className='frame-watermark'
-        href='https://autoz.dev'
+        href='https://tryautoz.vercel.app'
         target='_blank'
         rel='noopener noreferrer'
         title='Powered by AutoZ Engine'

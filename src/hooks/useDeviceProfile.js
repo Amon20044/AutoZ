@@ -8,6 +8,30 @@ function detectGpuTier({ deviceMemory, cores, maxTextureSize, isMobile }) {
   return 'medium'
 }
 
+const TIER_RANK = { low: 0, medium: 1, high: 2 }
+const minTier = (a, b) => (TIER_RANK[a] <= TIER_RANK[b] ? a : b)
+
+/**
+ * Parse the mobile OS family + major version from the user-agent string.
+ * It's a coarse capability signal — old OS versions ship on weaker GPUs that
+ * the RAM/core heuristic alone can miss — so we use it to step quality down.
+ */
+function detectMobileOS(ua = '') {
+  const ios = ua.match(/(?:iPhone|iPad|iPod)[^;)]*?\bOS (\d+)[._]/i)
+    || (/iP(hone|od|ad)/i.test(ua) ? ua.match(/Version\/(\d+)/i) : null)
+  if (ios) return { os: 'ios', version: parseInt(ios[1], 10) || 0 }
+  const android = ua.match(/Android (\d+)/i)
+  if (android) return { os: 'android', version: parseInt(android[1], 10) || 0 }
+  return { os: 'unknown', version: 0 }
+}
+
+/** Map an OS version to a quality tier. Unknown stays neutral (medium). */
+function osQualityTier({ os, version }) {
+  if (os === 'ios') return version >= 16 ? 'high' : version >= 14 ? 'medium' : 'low'
+  if (os === 'android') return version >= 12 ? 'high' : version >= 10 ? 'medium' : 'low'
+  return 'medium'
+}
+
 export function getDeviceProfile(gl = null, performanceRegression = 0) {
   if (typeof window === 'undefined') {
     return {
@@ -44,14 +68,26 @@ export function getDeviceProfile(gl = null, performanceRegression = 0) {
   const regressed = performanceRegression > 0.5
 
   if (deviceClass === 'mobile') {
-    const highMobile = gpuTier !== 'low' && !regressed
+    // Combine the hardware heuristic with the OS-version signal, taking the
+    // more conservative of the two. A modern OS never promises more than the
+    // RAM/core/texture check allows, but an old OS (e.g. iOS 13 / Android 9)
+    // can pull a phone down to the reduced tier even if it looks capable.
+    const osInfo = detectMobileOS(ua)
+    const mobileTier = regressed ? 'low' : minTier(gpuTier, osQualityTier(osInfo))
+    const high = mobileTier === 'high'
+    const reduced = mobileTier === 'low'
     return {
       deviceClass,
       gpuTier,
-      maxDpr: highMobile ? 1.5 : 1,
-      maxTextureSize: highMobile ? Math.min(maxTextureSize, 1024) : 512,
-      preferredLod: highMobile ? 'mobile-medium' : 'mobile-low',
-      allowHighLod: highMobile,
+      osName: osInfo.os,
+      osVersion: osInfo.version,
+      mobileTier,
+      // Flagship/modern phones earn a sharper 2x ceiling; the runtime FPS guard
+      // still drops this back to 1 if it can't hold frame rate.
+      maxDpr: high ? 2 : reduced ? 1 : 1.5,
+      maxTextureSize: reduced ? 512 : Math.min(maxTextureSize, 1024),
+      preferredLod: reduced ? 'mobile-low' : 'mobile-medium',
+      allowHighLod: !reduced,
       allowShadows: false,
       // Always on — the gpuTier picks the cheap "lite" post pass (no bloom /
       // aberration, downscaled target) so phones keep the graded look at low cost.
