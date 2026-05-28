@@ -25,7 +25,6 @@ import { installThreeConsoleFilter } from '@/lib/three/console-filter'
 import { getDeviceProfile, useDeviceProfile } from '@/hooks/useDeviceProfile'
 import { computeFrameCameraPreset, FRAME_CAMERA_MODES } from '@/engine/math/camera'
 import { dampVec3, stableDelta } from '@/engine/math/animation'
-import { pickDeviceLod } from '@/lib/assets/lod-manifest'
 
 installThreeConsoleFilter()
 
@@ -36,6 +35,14 @@ const EXTERNAL_CAMERA_MODES = FRAME_CAMERA_MODES.filter((mode) => mode.id !== 'c
 // Calm spin that lets the rim/spoke pattern stay readable instead of blurring —
 // the showroom default when the buyer toggles wheel spin in the frame.
 const WHEEL_SHOWCASE_SPEED = 2.4
+
+// FPS-driven progressive LOD streaming. Start on the lightest device LOD, and
+// while the smoothed FPS holds above the bar, climb the ladder one rung at a
+// time (preloading the next rung in a decoder worker first so the swap is
+// gapless). Climbing stops at the device/OS tier cap or when FPS can't hold.
+const UPGRADE_FPS = 42          // a touch above the 40 floor for hysteresis
+const UPGRADE_STABLE_TICKS = 3  // ~1.5s of healthy samples (500ms cadence) before a swap
+const UPGRADE_COOLDOWN_MS = 2500
 
 function getInitialFrameQualityMode() {
   if (typeof window === 'undefined') return 'balanced'
@@ -100,11 +107,16 @@ export default function FrameCanvas({ snapshot }) {
   const [fpsSample, setFpsSample] = useState({ fps: null, regression: 0 })
   const [qualityMode, setQualityMode] = useState(() => getInitialFrameQualityMode())
   const [webglStatus, setWebglStatus] = useState('ready')
+  // Once the first model is on screen we keep the canvas up during progressive
+  // LOD swaps instead of flashing the full-screen spinner each time.
+  const [firstModelShown, setFirstModelShown] = useState(false)
   const controlsRef = useRef(null)
   const orbitAngleRef = useRef(0)
   const scrubbingRef = useRef(false)
   const hardwareLowRef = useRef(qualityMode === 'low')
   const healthySinceRef = useRef(0)
+  const lightsOnRef = useRef(false)
+  const wheelsOnRef = useRef(false)
   const isCockpit = cameraMode === 'cockpit'
   const orbitScrubEnabled = modelReady && cameraMode === 'auto'
   const performanceRegressed = qualityMode === 'low' || webglStatus === 'lost'
@@ -128,12 +140,14 @@ export default function FrameCanvas({ snapshot }) {
 
   useEffect(() => {
     setModelLoadError(null)
+    setFirstModelShown(false)
   }, [snapshot?.slug])
 
   const handleRuntimeReady = useCallback((nextRuntime) => {
     setRuntime(nextRuntime)
     const ready = Boolean(nextRuntime?.engine && nextRuntime?.registry)
     setModelReady(ready)
+    if (ready) setFirstModelShown(true)
     setFrameInfo(nextRuntime?.engine?.getFrameInfo?.() ?? null)
     // Signal the embedding parent (landing page, customer iframe, etc.) so it
     // can fade its own loader. Safe no-op when not iframed.
@@ -144,13 +158,23 @@ export default function FrameCanvas({ snapshot }) {
     }
   }, [snapshot?.slug])
 
-  // Reset toggle state whenever the engine instance changes (HMR, slug swap,
-  // re-publish). Without this, lightsOn/wheelsOn can survive across engines
-  // and the UI lies about what the scene is actually doing.
+  // Keep the ref mirrors in sync so the engine-swap effect below can re-apply
+  // the *current* toggle state without re-running on every toggle.
+  lightsOnRef.current = lightsOn
+  wheelsOnRef.current = wheelsOn
+
+  // Re-apply the active toggles whenever the engine instance changes (HMR, slug
+  // swap, re-publish, or a progressive LOD upgrade). A LOD swap builds a fresh
+  // engine, so without this the headlights/wheels would silently switch off and
+  // the UI would lie about the scene state.
   useEffect(() => {
-    setLightsOn(false)
-    setWheelsOn(false)
-  }, [runtime.engine])
+    const engine = runtime.engine
+    if (!engine) return
+    const lights = runtime.registry?.headLights.length || runtime.registry?.lights.length || 0
+    const wheels = runtime.registry?.wheelSpinParts.length ?? 0
+    if (lightsOnRef.current && lights > 0) engine.toggleHeadlights(true)
+    if (wheelsOnRef.current && wheels > 0) engine.setWheelSpin(true, WHEEL_SHOWCASE_SPEED)
+  }, [runtime.engine, runtime.registry])
 
   // Engine methods (toggleHeadlights / setWheelSpin) return the *new state*,
   // which means a successful "turn off" returns `false`. We can't use that as
@@ -336,6 +360,8 @@ export default function FrameCanvas({ snapshot }) {
                 onError={setModelLoadError}
                 showPartLabels={showPartLabels}
                 performanceRegression={effectivePerformanceRegression}
+                fps={fpsSample.fps}
+                ready={modelReady}
               />
             )}
           </Suspense>
@@ -377,7 +403,7 @@ export default function FrameCanvas({ snapshot }) {
         </div>
       )}
 
-      {!modelReady && snapshot.model?.url && !modelLoadError && webglStatus !== 'lost' && (
+      {!modelReady && !firstModelShown && snapshot.model?.url && !modelLoadError && webglStatus !== 'lost' && (
         <div className='frame-loading'>
           <div className='az-spinner' />
         </div>
@@ -670,133 +696,168 @@ function isStandaloneGltfUrl(raw) {
 }
 
 /**
- * Lowest-footprint LOD for the client's device tier — used while a chunked GLB downloads.
+ * Ordered device LOD ladder for the asset manifest: standalone-GLB LODs that
+ * target this device class (falling back to all LODs), sorted lightest-first by
+ * priority. Each entry is a rung the runtime can stream up to.
  */
-function pickProgressivePreviewLod(assetManifest, deviceProfile) {
-  const lod = pickDeviceLod(assetManifest, deviceProfile.deviceClass)
-  return lod?.url && isStandaloneGltfUrl(lod.url) ? lod : null
+function buildLodLadder(assetManifest, deviceClass) {
+  const lods = (assetManifest?.lods ?? []).filter((lod) => lod?.url && isStandaloneGltfUrl(lod.url))
+  if (lods.length === 0) return []
+  const exact = lods.filter((lod) => Array.isArray(lod.device) && lod.device.includes(deviceClass))
+  const pool = exact.length ? exact : lods
+  return [...pool].sort((a, b) => (
+    (Number.isFinite(a.priority) ? a.priority : 99) - (Number.isFinite(b.priority) ? b.priority : 99)
+  ))
 }
 
 function FrameRuntimeLoader({
-  snapshot, onReady, onProgress, onError, showPartLabels, performanceRegression = 0,
+  snapshot, onReady, onProgress, onError, showPartLabels, performanceRegression = 0, fps = null, ready = false,
 }) {
   const gl = useThree((state) => state.gl)
   const regressionLevel = performanceRegression > 0.5 ? 1 : 0
   const deviceProfile = useDeviceProfile(gl, regressionLevel)
   const deviceClass = deviceProfile.deviceClass
-  const [modelUrl, setModelUrl] = useState(null)
-  const previewUrlRef = useRef(null)
 
+  // Shared loader config so useGLTF.preload (warm-up) and useGLTF (render) hit
+  // the same drei cache entry — Draco/KTX2/meshopt all decode in workers.
+  const extendLoader = useCallback((loader) => {
+    const ktx2 = new KTX2Loader()
+    ktx2.setTranscoderPath('/decoders/basis/')
+    ktx2.detectSupport(gl)
+    loader.setKTX2Loader(ktx2)
+  }, [gl])
+
+  const assetManifest = useMemo(() => getFrameAssetManifest(snapshot), [snapshot])
+  const ladder = useMemo(() => buildLodLadder(assetManifest, deviceClass), [assetManifest, deviceClass])
+  const isLadder = ladder.length > 0
+
+  // Highest rung this device/OS tier may stream up to.
+  const maxRung = useMemo(() => {
+    if (ladder.length === 0) return 0
+    if (deviceClass === 'mobile') return deviceProfile.mobileTier === 'low' ? 0 : ladder.length - 1
+    return deviceProfile.allowHighLod ? ladder.length - 1 : 0
+  }, [ladder.length, deviceClass, deviceProfile.mobileTier, deviceProfile.allowHighLod])
+
+  const [rung, setRung] = useState(0)
+  const [blobUrl, setBlobUrl] = useState(null) // chunked/direct path (no device LODs)
+  const previewUrlRef = useRef(null)
+  const healthyRef = useRef(0)
+  const lastSwapRef = useRef(0)
+  const preloadedRef = useRef(new Set())
+
+  // Reset progressive state when the source model (or device class) changes.
   useEffect(() => {
+    onError?.(null)
+    setRung(0)
+    healthyRef.current = 0
+    lastSwapRef.current = 0
+    preloadedRef.current = new Set()
+  }, [assetManifest, deviceClass, onError])
+
+  // If the tier cap dropped below the current rung (perf regressed), step down.
+  useEffect(() => {
+    if (isLadder && rung > maxRung) setRung(maxRung)
+  }, [isLadder, rung, maxRung])
+
+  const ladderRung = Math.min(rung, maxRung)
+  const ladderUrl = isLadder ? normalizeStorageUrl(ladder[ladderRung].url) : null
+
+  // Surface the active rung to the progress UI.
+  useEffect(() => {
+    if (!isLadder) return
+    const lod = ladder[ladderRung]
+    onProgress?.({
+      phase: 'done',
+      fileName: lod?.fileName || lod?.id || 'device-lod',
+      percent: 100,
+      totalParts: 1,
+      completedParts: 1,
+      cachedParts: 0,
+      statusText: ladderRung > 0 ? `Streaming ${lod?.id || 'higher'} LOD` : `Loading ${lod?.id || 'device'} LOD`,
+      parts: [],
+    })
+  }, [isLadder, ladder, ladderRung, onProgress])
+
+  // FPS-gated climb: while the smoothed FPS holds above the bar, warm the next
+  // rung in a decoder worker and swap it in once it has been stable for a beat.
+  useEffect(() => {
+    if (!isLadder || !ready || fps == null || rung >= maxRung) return
+
+    if (fps < UPGRADE_FPS) {
+      healthyRef.current = 0
+      return
+    }
+    healthyRef.current += 1
+
+    const next = ladder[rung + 1]
+    if (!next) return
+    const nextUrl = normalizeStorageUrl(next.url)
+    if (!preloadedRef.current.has(nextUrl)) {
+      preloadedRef.current.add(nextUrl)
+      try { useGLTF.preload(nextUrl, '/decoders/draco/', true, extendLoader) } catch { /* best effort */ }
+    }
+
+    const now = performance.now()
+    if (healthyRef.current >= UPGRADE_STABLE_TICKS && now - lastSwapRef.current > UPGRADE_COOLDOWN_MS) {
+      lastSwapRef.current = now
+      healthyRef.current = 0
+      setRung((current) => Math.min(current + 1, maxRung))
+    }
+  }, [fps, ready, rung, maxRung, isLadder, ladder, extendLoader])
+
+  // Free the drei cache for a rung we leave behind (and the last rung on unmount).
+  useEffect(() => {
+    if (!isLadder || !ladderUrl) return undefined
+    return () => { try { useGLTF.clear(ladderUrl) } catch { /* cache miss */ } }
+  }, [isLadder, ladderUrl])
+
+  // ─── Chunked / direct full model (manifest has no standalone device LODs) ───
+  useEffect(() => {
+    if (isLadder) return undefined
     let active = true
     let revokeBlob = () => {}
 
-    setModelUrl(null)
+    setBlobUrl(null)
     previewUrlRef.current = null
-    onError?.(null)
     onReady({ engine: null, registry: null })
 
     const modelPayload = snapshot.model
+    if (!modelPayload?.url) return undefined
 
     const clearPreviewCache = () => {
       const u = previewUrlRef.current
       if (!u) return
       previewUrlRef.current = null
-      try {
-        useGLTF.clear(u)
-      } catch {
-        // Older drei builds / cache miss — harmless
-      }
-    }
-
-    if (!modelPayload?.url) return undefined
-
-    const assetManifest = getFrameAssetManifest(snapshot)
-    const manifestLod = pickProgressivePreviewLod(assetManifest, { deviceClass })
-
-    if (manifestLod?.url) {
-      const lodUrl = normalizeStorageUrl(manifestLod.url)
-      previewUrlRef.current = lodUrl
-      setModelUrl(lodUrl)
-      onProgress?.({
-        phase: 'done',
-        fileName: manifestLod.fileName || manifestLod.id || 'device-lod',
-        percent: 100,
-        totalParts: 1,
-        completedParts: 1,
-        cachedParts: 0,
-        statusText: `Loading ${manifestLod.id || 'device'} LOD`,
-        parts: [],
-      })
-
-      return () => {
-        active = false
-        clearPreviewCache()
-      }
+      try { useGLTF.clear(u) } catch { /* cache miss */ }
     }
 
     const chunked = isChunkedModel(modelPayload)
-    const previewLod = chunked ? pickProgressivePreviewLod(assetManifest, { deviceClass }) : null
 
     const finalizeFromBlob = async () => {
       const result = await createModelObjectUrl(modelPayload, { onProgress })
       revokeBlob = result.revoke
-
       if (!active) {
         revokeBlob()
         return
       }
-
       clearPreviewCache()
-      setModelUrl(result.url)
+      setBlobUrl(result.url)
     }
 
     if (!chunked) {
       const directUrl = normalizeStorageUrl(modelPayload.url)
-      if (!directUrl) {
-        onError?.('Model URL is missing.')
-      } else {
-        setModelUrl(directUrl)
-      }
+      if (!directUrl) onError?.('Model URL is missing.')
+      else setBlobUrl(directUrl)
       return () => {
         active = false
         revokeBlob()
       }
     }
 
-    if (previewLod?.url) {
-      const preview = normalizeStorageUrl(previewLod.url)
-      previewUrlRef.current = preview
-      setModelUrl(preview)
-      onProgress?.({
-        phase: 'fetching',
-        fileName: previewLod.id || 'preview-lod',
-        percent: 0,
-        totalParts: 1,
-        completedParts: 0,
-        cachedParts: 0,
-        statusText: previewLod.fileName?.includes('.')
-          ? `Loading preview • ${previewLod.fileName}`
-          : 'Loading low-detail preview • streaming HD in background',
-        parts: [],
-      })
-    }
-
     finalizeFromBlob().catch((err) => {
       if (!active) return
-      if (!previewLod?.url) {
-        const msg = typeof err?.message === 'string' ? err.message : String(err ?? 'Could not assemble model.')
-        onError?.(msg)
-      } else if (previewUrlRef.current) {
-        onProgress?.({
-          phase: 'done',
-          fileName: modelPayload.fileName || 'model.glb',
-          percent: 100,
-          totalParts: 1,
-          completedParts: 1,
-          statusText: 'Preview ready (full-resolution stream failed)',
-        })
-      }
+      const msg = typeof err?.message === 'string' ? err.message : String(err ?? 'Could not assemble model.')
+      onError?.(msg)
     })
 
     return () => {
@@ -804,21 +865,17 @@ function FrameRuntimeLoader({
       revokeBlob()
       clearPreviewCache()
     }
-  }, [
-    snapshot,
-    deviceClass,
-    onError,
-    onProgress,
-    onReady,
-  ])
+  }, [isLadder, snapshot, onError, onProgress, onReady])
 
-  if (!modelUrl) return null
+  const activeUrl = isLadder ? ladderUrl : blobUrl
+  if (!activeUrl) return null
 
   return (
     <FrameRuntime
-      key={modelUrl}
+      key={activeUrl}
       snapshot={snapshot}
-      modelUrl={modelUrl}
+      modelUrl={activeUrl}
+      extendLoader={extendLoader}
       onReady={onReady}
       onError={onError}
       showPartLabels={showPartLabels}
@@ -826,15 +883,15 @@ function FrameRuntimeLoader({
   )
 }
 
-function FrameRuntime({ snapshot, modelUrl, onReady, showPartLabels, onError }) {
+function FrameRuntime({ snapshot, modelUrl, extendLoader, onReady, showPartLabels, onError }) {
   const gl = useThree((state) => state.gl)
-  const extendLoader = useCallback((loader) => {
+  const fallbackExtend = useCallback((loader) => {
     const ktx2 = new KTX2Loader()
     ktx2.setTranscoderPath('/decoders/basis/')
     ktx2.detectSupport(gl)
     loader.setKTX2Loader(ktx2)
   }, [gl])
-  const gltf = useGLTF(modelUrl, '/decoders/draco/', true, extendLoader)
+  const gltf = useGLTF(modelUrl, '/decoders/draco/', true, extendLoader ?? fallbackExtend)
   const { engine, registry, error, isLoaded } = useAutoZEngine(snapshot, gltf)
 
   useEffect(() => {
