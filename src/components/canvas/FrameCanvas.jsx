@@ -7,7 +7,7 @@ import {
 } from '@react-three/drei'
 import { KTX2Loader } from 'three/examples/jsm/loaders/KTX2Loader.js'
 import * as THREE from 'three'
-import { Camera, Disc3, Eye, EyeOff, Lightbulb } from 'lucide-react'
+import { Armchair, Camera, Car, Disc3, Eye, EyeOff, Lightbulb, Orbit } from 'lucide-react'
 import PostProcessing, { RendererSettings } from './PostProcessing'
 import PartButtons from './PartButtons'
 import StudioStage from './StudioStage'
@@ -28,6 +28,14 @@ import { dampVec3, stableDelta } from '@/engine/math/animation'
 import { pickDeviceLod } from '@/lib/assets/lod-manifest'
 
 installThreeConsoleFilter()
+
+// External camera angles (everything except the interior cockpit). The view
+// selector handles Exterior vs Interior; this dropdown only lists exterior angles.
+const EXTERNAL_CAMERA_MODES = FRAME_CAMERA_MODES.filter((mode) => mode.id !== 'cockpit')
+
+// Calm spin that lets the rim/spoke pattern stay readable instead of blurring —
+// the showroom default when the buyer toggles wheel spin in the frame.
+const WHEEL_SHOWCASE_SPEED = 2.4
 
 function getInitialFrameQualityMode() {
   if (typeof window === 'undefined') return 'balanced'
@@ -76,23 +84,29 @@ export default function FrameCanvas({ snapshot }) {
     () => orbitTargetFromImport(snapshot.import, [0, 0.8, 0]),
     [snapshot.import],
   )
+  const initialCameraMode = snapshot.camera?.frame?.selectedMode ?? 'auto'
   const [runtime, setRuntime] = useState({ engine: null, registry: null })
   const [lightsOn, setLightsOn] = useState(false)
   const [wheelsOn, setWheelsOn] = useState(false)
-  const [wheelSpeed, setWheelSpeed] = useState(5.5)
   const [modelLoadProgress, setModelLoadProgress] = useState(null)
   const [modelLoadError, setModelLoadError] = useState(null)
   const [modelReady, setModelReady] = useState(false)
   const [showPartLabels, setShowPartLabels] = useState(false)
-  const [cameraMode, setCameraMode] = useState(snapshot.camera?.frame?.selectedMode ?? 'auto')
+  const [cameraMode, setCameraMode] = useState(initialCameraMode)
+  const [externalMode, setExternalMode] = useState(initialCameraMode === 'cockpit' ? 'auto' : initialCameraMode)
+  const [orbitAngle, setOrbitAngle] = useState(0)
+  const [isScrubbing, setIsScrubbing] = useState(false)
   const [frameInfo, setFrameInfo] = useState(null)
   const [fpsSample, setFpsSample] = useState({ fps: null, regression: 0 })
   const [qualityMode, setQualityMode] = useState(() => getInitialFrameQualityMode())
   const [webglStatus, setWebglStatus] = useState('ready')
   const controlsRef = useRef(null)
+  const orbitAngleRef = useRef(0)
+  const scrubbingRef = useRef(false)
   const hardwareLowRef = useRef(qualityMode === 'low')
   const healthySinceRef = useRef(0)
   const isCockpit = cameraMode === 'cockpit'
+  const orbitScrubEnabled = modelReady && cameraMode === 'auto'
   const performanceRegressed = qualityMode === 'low' || webglStatus === 'lost'
   const effectivePerformanceRegression = performanceRegressed ? 1 : (fpsSample.regression ?? 0)
   const runtimeStage = useMemo(
@@ -121,8 +135,6 @@ export default function FrameCanvas({ snapshot }) {
     const ready = Boolean(nextRuntime?.engine && nextRuntime?.registry)
     setModelReady(ready)
     setFrameInfo(nextRuntime?.engine?.getFrameInfo?.() ?? null)
-    const savedSpeed = nextRuntime?.registry?.wheelSpinParts?.find((part) => Number.isFinite(part.spinSpeed))?.spinSpeed
-    if (Number.isFinite(savedSpeed)) setWheelSpeed(savedSpeed)
     // Signal the embedding parent (landing page, customer iframe, etc.) so it
     // can fade its own loader. Safe no-op when not iframed.
     if (ready && typeof window !== 'undefined' && window.parent !== window) {
@@ -157,14 +169,48 @@ export default function FrameCanvas({ snapshot }) {
     const engine = runtime.engine
     if (!engine || wheelCount === 0) return
     const next = !wheelsOn
-    engine.setWheelSpin(next, wheelSpeed)
+    engine.setWheelSpin(next, WHEEL_SHOWCASE_SPEED)
     setWheelsOn(next)
-  }, [runtime.engine, wheelCount, wheelSpeed, wheelsOn])
+  }, [runtime.engine, wheelCount, wheelsOn])
 
-  const handleWheelSpeedChange = useCallback((value) => {
-    setWheelSpeed(value)
-    if (wheelsOn) runtime.engine?.setWheelSpin(true, value)
-  }, [runtime.engine, wheelsOn])
+  // ─── Exterior / Interior view + 360° orbit scrub ─────────────────────────
+  const selectExterior = useCallback(() => {
+    setCameraMode((prev) => (prev === 'cockpit' ? externalMode : prev))
+  }, [externalMode])
+
+  const selectInterior = useCallback(() => {
+    scrubbingRef.current = false
+    setIsScrubbing(false)
+    setCameraMode('cockpit')
+  }, [])
+
+  const handleAngleSelect = useCallback((value) => {
+    setExternalMode(value)
+    setCameraMode(value)
+  }, [])
+
+  const beginScrub = useCallback((event) => {
+    const controls = controlsRef.current
+    if (typeof controls?.getAzimuthalAngle === 'function') {
+      const deg = ((THREE.MathUtils.radToDeg(controls.getAzimuthalAngle()) % 360) + 360) % 360
+      orbitAngleRef.current = deg
+      setOrbitAngle(deg)
+    }
+    scrubbingRef.current = true
+    setIsScrubbing(true)
+    try { event.currentTarget.setPointerCapture?.(event.pointerId) } catch { /* not all inputs support capture */ }
+  }, [])
+
+  const endScrub = useCallback(() => {
+    scrubbingRef.current = false
+    setIsScrubbing(false)
+  }, [])
+
+  const handleOrbitAngle = useCallback((value) => {
+    if (!Number.isFinite(value)) return
+    orbitAngleRef.current = value
+    setOrbitAngle(value)
+  }, [])
 
   const handleFpsSample = useCallback((sample) => {
     setFpsSample((prev) => {
@@ -267,6 +313,8 @@ export default function FrameCanvas({ snapshot }) {
           snapshot={snapshot}
           cameraSettings={snapshot.camera?.frame}
           rotateSpeed={snapshot.animation?.rotateSpeed ?? 0.35}
+          orbitAngleRef={orbitAngleRef}
+          scrubbingRef={scrubbingRef}
         />
         <CockpitLookControls
           enabled={isCockpit}
@@ -336,73 +384,110 @@ export default function FrameCanvas({ snapshot }) {
       )}
 
       <div className='frame-controls' aria-label='Vehicle controls'>
-        <label className='frame-camera-control' title='Camera angle'>
-          <span className='frame-control-icon'>
-            <Camera size={13} strokeWidth={2.3} aria-hidden='true' />
-          </span>
-          <select
-            value={cameraMode}
-            onChange={(e) => setCameraMode(e.target.value)}
-            aria-label='Camera angle'
+        {/* Row 1 — drag to orbit 360° around the car (auto-rotate view only) */}
+        <div className='frame-row frame-row--angle'>
+          <div
+            className={`frame-angle-control ${orbitScrubEnabled ? '' : 'is-disabled'} ${isScrubbing ? 'is-scrubbing' : ''}`}
+            title={orbitScrubEnabled ? 'Drag to rotate 360° around the car' : 'Switch to Auto Rotate to scrub the 360° view'}
           >
-            {FRAME_CAMERA_MODES.map((mode) => (
-              <option key={mode.id} value={mode.id}>{mode.label}</option>
-            ))}
-          </select>
-        </label>
-        <button
-          type='button'
-          className={`frame-control ${lightsOn ? 'frame-control--active' : ''}`}
-          onClick={toggleLights}
-          aria-pressed={lightsOn}
-          disabled={!runtime.engine || lightCount === 0}
-          title={lightCount > 0 ? 'Toggle headlights' : 'No headlights detected'}
-        >
-          <span className='frame-control-icon'>
-            <Lightbulb size={13} strokeWidth={2.3} aria-hidden='true' />
-          </span>
-          <span>Headlights</span>
-        </button>
-        <button
-          type='button'
-          className={`frame-control ${wheelsOn ? 'frame-control--active' : ''}`}
-          onClick={toggleWheels}
-          aria-pressed={wheelsOn}
-          disabled={!runtime.engine || wheelCount === 0}
-          title={wheelCount > 0 ? 'Toggle wheel spin' : 'No wheels detected'}
-        >
-          <span className='frame-control-icon'>
-            <Disc3 size={13} strokeWidth={2.3} aria-hidden='true' />
-          </span>
-          <span>Wheel Spin</span>
-        </button>
-        <label className='frame-speed-control' title='Wheel spin speed'>
-          <span>{wheelSpeed.toFixed(1)}x</span>
-          <input
-            type='range'
-            min='0.5'
-            max='14'
-            step='0.5'
-            value={wheelSpeed}
-            disabled={!runtime.engine || wheelCount === 0}
-            onChange={(e) => handleWheelSpeedChange(parseFloat(e.target.value))}
-          />
-        </label>
-        <button
-          type='button'
-          className={`frame-control ${showPartLabels ? 'frame-control--active' : ''}`}
-          onClick={() => setShowPartLabels((prev) => !prev)}
-          aria-pressed={showPartLabels}
-          disabled={!runtime.engine}
-          title={showPartLabels ? 'Hide part labels' : 'Show part labels'}
-        >
-          <span className='frame-control-icon'>
-            {showPartLabels
-              ? <EyeOff size={13} strokeWidth={2.3} aria-hidden='true' />
-              : <Eye size={13} strokeWidth={2.3} aria-hidden='true' />}
-          </span>
-          <span>{showPartLabels ? 'Hide Labels' : 'Show Labels'}</span>
-        </button>
+            <span className='frame-control-icon'>
+              <Orbit size={13} strokeWidth={2.3} aria-hidden='true' />
+            </span>
+            <input
+              type='range'
+              min='0'
+              max='360'
+              step='1'
+              value={Math.round(orbitAngle)}
+              disabled={!orbitScrubEnabled}
+              aria-label='Rotate 360 degrees around the car'
+              onPointerDown={beginScrub}
+              onPointerUp={endScrub}
+              onPointerCancel={endScrub}
+              onLostPointerCapture={endScrub}
+              onChange={(e) => handleOrbitAngle(parseFloat(e.target.value))}
+            />
+            <span className='frame-angle-value'>{Math.round(orbitAngle)}°</span>
+          </div>
+        </div>
+
+        {/* Row 2 — view selector, camera angle, and icon-only toggles */}
+        <div className='frame-row frame-row--main'>
+          <div className='frame-view-toggle' role='group' aria-label='View mode'>
+            <button
+              type='button'
+              className={`frame-view-btn ${!isCockpit ? 'frame-view-btn--active' : ''}`}
+              onClick={selectExterior}
+              aria-pressed={!isCockpit}
+            >
+              <Car size={13} strokeWidth={2.3} aria-hidden='true' />
+              <span>Exterior</span>
+            </button>
+            <button
+              type='button'
+              className={`frame-view-btn ${isCockpit ? 'frame-view-btn--active' : ''}`}
+              onClick={selectInterior}
+              aria-pressed={isCockpit}
+            >
+              <Armchair size={13} strokeWidth={2.3} aria-hidden='true' />
+              <span>Interior</span>
+            </button>
+          </div>
+
+          <label className='frame-camera-control' title='Camera angle'>
+            <span className='frame-control-icon'>
+              <Camera size={13} strokeWidth={2.3} aria-hidden='true' />
+            </span>
+            <select
+              value={externalMode}
+              disabled={isCockpit}
+              onChange={(e) => handleAngleSelect(e.target.value)}
+              aria-label='Camera angle'
+            >
+              {EXTERNAL_CAMERA_MODES.map((mode) => (
+                <option key={mode.id} value={mode.id}>{mode.label}</option>
+              ))}
+            </select>
+          </label>
+
+          <div className='frame-icon-group'>
+            <button
+              type='button'
+              className={`frame-icon-btn ${lightsOn ? 'frame-icon-btn--active' : ''}`}
+              onClick={toggleLights}
+              aria-pressed={lightsOn}
+              aria-label='Toggle headlights'
+              disabled={!runtime.engine || lightCount === 0}
+              title={lightCount > 0 ? 'Toggle headlights' : 'No headlights detected'}
+            >
+              <Lightbulb size={15} strokeWidth={2.2} aria-hidden='true' />
+            </button>
+            <button
+              type='button'
+              className={`frame-icon-btn ${wheelsOn ? 'frame-icon-btn--active' : ''}`}
+              onClick={toggleWheels}
+              aria-pressed={wheelsOn}
+              aria-label='Toggle wheel spin'
+              disabled={!runtime.engine || wheelCount === 0}
+              title={wheelCount > 0 ? 'Toggle wheel spin' : 'No wheels detected'}
+            >
+              <Disc3 size={15} strokeWidth={2.2} aria-hidden='true' />
+            </button>
+            <button
+              type='button'
+              className={`frame-icon-btn ${showPartLabels ? 'frame-icon-btn--active' : ''}`}
+              onClick={() => setShowPartLabels((prev) => !prev)}
+              aria-pressed={showPartLabels}
+              aria-label={showPartLabels ? 'Hide part labels' : 'Show part labels'}
+              disabled={!runtime.engine}
+              title={showPartLabels ? 'Hide part labels' : 'Show part labels'}
+            >
+              {showPartLabels
+                ? <EyeOff size={15} strokeWidth={2.2} aria-hidden='true' />
+                : <Eye size={15} strokeWidth={2.2} aria-hidden='true' />}
+            </button>
+          </div>
+        </div>
       </div>
     </div>
   )
@@ -469,6 +554,7 @@ function FrameAdaptiveQuality({ performanceRegression = 0 }) {
 
 function FrameCameraRig({
   mode, controlsRef, frameInfo, fallbackTarget, snapshot, cameraSettings, rotateSpeed = 0.35,
+  orbitAngleRef = null, scrubbingRef = null,
 }) {
   const { camera, size } = useThree()
   const desired = useRef({
@@ -480,6 +566,8 @@ function FrameCameraRig({
   })
   const previousMode = useRef(mode)
   const autoSettleUntil = useRef(0)
+  // Scratch objects for the manual 360° azimuth scrub — reused each frame.
+  const scrubScratch = useRef({ offset: new THREE.Vector3(), spherical: new THREE.Spherical() })
 
   useEffect(() => {
     const isMobile = size.width <= 720 || (typeof navigator !== 'undefined' && navigator.maxTouchPoints > 1)
@@ -522,6 +610,7 @@ function FrameCameraRig({
     const position = desired.current.position
     const isSettling = performance.now() < autoSettleUntil.current
     const smoothness = mode === 'cockpit' ? 18 : 16
+    const scrubbing = Boolean(scrubbingRef?.current) && mode !== 'cockpit'
 
     if (controls) {
       controls.minDistance = desired.current.minDistance
@@ -530,7 +619,8 @@ function FrameCameraRig({
       controls.enablePan = false
       controls.minPolarAngle = mode === 'cockpit' ? Math.PI / 2 : 0.3
       controls.maxPolarAngle = mode === 'cockpit' ? Math.PI / 2 : Math.PI / 2 - 0.05
-      controls.autoRotate = mode === 'auto'
+      // Pause auto-rotation while the user scrubs the 360° slider.
+      controls.autoRotate = mode === 'auto' && !scrubbing
       if (mode === 'auto') {
         const distance = camera.position.distanceTo(controls.target)
         const comfortableDistance = Math.max((frameInfo?.radius ?? 4) * 1.25, 1)
@@ -540,6 +630,21 @@ function FrameCameraRig({
       if (isSettling) {
         dampVec3(controls.target, target, 18, dt)
       }
+    }
+
+    // Manual azimuth scrub: orbit the camera around controls.target (the COM
+    // pivot) toward the slider angle. drei's OrbitControls.update() runs at
+    // priority -1, so setting the position here (priority 0) is the final word.
+    if (controls && scrubbing && !isSettling) {
+      const { offset, spherical } = scrubScratch.current
+      const targetTheta = THREE.MathUtils.degToRad(orbitAngleRef?.current ?? 0)
+      offset.copy(camera.position).sub(controls.target)
+      spherical.setFromVector3(offset)
+      let diff = targetTheta - spherical.theta
+      diff = Math.atan2(Math.sin(diff), Math.cos(diff))
+      spherical.theta += diff * THREE.MathUtils.clamp(dt * 9, 0, 1)
+      offset.setFromSpherical(spherical)
+      camera.position.copy(controls.target).add(offset)
     }
 
     if (isSettling) {

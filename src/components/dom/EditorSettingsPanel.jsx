@@ -106,6 +106,13 @@ export default function EditorSettingsPanel({
     next[index] = value
     updateSelectedPreset({ [key]: next })
   }
+  const orbitCenter = frameCamera.orbitCenter ?? [0, 0, 0]
+  const updateOrbitCenter = (index, value) => {
+    if (!Number.isFinite(value)) return
+    const next = [...orbitCenter]
+    next[index] = value
+    updateFrameCamera({ orbitCenter: next })
+  }
 
   return (
     <div className='az-panel-right'>
@@ -486,6 +493,13 @@ export default function EditorSettingsPanel({
             <NumberInput label='X' value={selectedCameraPreset.targetOffset?.[0] ?? 0} step={0.05} onChange={(v) => updateSelectedVector('targetOffset', 0, v)} />
             <NumberInput label='Y' value={selectedCameraPreset.targetOffset?.[1] ?? 0} step={0.05} onChange={(v) => updateSelectedVector('targetOffset', 1, v)} />
             <NumberInput label='Z' value={selectedCameraPreset.targetOffset?.[2] ?? 0} step={0.05} onChange={(v) => updateSelectedVector('targetOffset', 2, v)} />
+          </div>
+          <div className='az-part-control-label'>Rotation Center (COM)</div>
+          <div className='az-part-control-hint'>Pivot for the 360° orbit & framing — nudge to match the car&apos;s center of mass.</div>
+          <div className='az-part-control-grid az-part-control-grid--triple'>
+            <NumberInput label='X' value={orbitCenter[0] ?? 0} step={0.05} onChange={(v) => updateOrbitCenter(0, v)} />
+            <NumberInput label='Y' value={orbitCenter[1] ?? 0} step={0.05} onChange={(v) => updateOrbitCenter(1, v)} />
+            <NumberInput label='Z' value={orbitCenter[2] ?? 0} step={0.05} onChange={(v) => updateOrbitCenter(2, v)} />
           </div>
           <SliderRow
             label='Auto Rotate Speed'

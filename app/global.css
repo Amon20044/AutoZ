@@ -1006,6 +1006,14 @@
   font-size: 10px;
 }
 
+.az-part-control-hint {
+  margin: 2px 0 6px;
+  color: var(--text-dim);
+  font-size: 10px;
+  line-height: 1.45;
+  opacity: 0.78;
+}
+
 .az-part-field {
   display: grid;
   gap: 4px;
@@ -1973,14 +1981,13 @@
   bottom: 18px;
   transform: translateX(-50%);
   z-index: 60;
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  display: flex;
+  flex-direction: row;
   align-items: center;
-  justify-content: stretch;
-  gap: 7px;
-  width: min(590px, calc(100% - 40px));
-  padding: 9px;
-  border-radius: 24px;
+  gap: 10px;
+  width: min(760px, calc(100% - 40px));
+  padding: 9px 12px;
+  border-radius: 22px;
   background:
     linear-gradient(180deg, rgba(9, 14, 30, 0.84), rgba(4, 6, 15, 0.86)),
     rgba(4, 6, 15, 0.78);
@@ -1992,6 +1999,23 @@
   backdrop-filter: blur(20px) saturate(1.1);
   -webkit-backdrop-filter: blur(20px) saturate(1.1);
   pointer-events: auto;
+}
+
+.frame-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.frame-row--angle {
+  flex: 1 1 auto;
+  min-width: 140px;
+}
+
+.frame-row--main {
+  flex: 0 0 auto;
+  gap: 8px;
 }
 
 .frame-control,
@@ -2088,39 +2112,142 @@
   color: #f8fafc;
 }
 
-.frame-speed-control {
+/* ─── 360° orbit angle slider (row 1) ─────────────────────────────────────── */
+.frame-angle-control {
   height: 34px;
   display: inline-flex;
   align-items: center;
-  grid-column: span 2;
+  flex: 1 1 auto;
   gap: 10px;
   min-width: 0;
-  padding: 0 12px;
+  padding: 0 14px;
   border-radius: 14px;
   border: 1px solid rgba(255, 255, 255, 0.06);
   background: rgba(255, 255, 255, 0.035);
   color: rgba(255, 255, 255, .82);
   font: 600 11px/1 var(--font-mono);
   letter-spacing: 0.04em;
-  transition: background var(--t);
+  transition: background var(--t), border-color var(--t);
 }
 
-.frame-speed-control > span:first-child {
-  min-width: 32px;
-  color: var(--blue-3);
-  font-weight: 700;
+.frame-angle-control.is-scrubbing {
+  border-color: rgba(0, 183, 255, 0.45);
+  background: rgba(0, 149, 255, 0.10);
 }
 
-.frame-speed-control input {
+.frame-angle-control.is-disabled {
+  opacity: .4;
+}
+
+.frame-angle-control input[type='range'] {
   flex: 1;
   width: auto;
-  min-width: 88px;
+  min-width: 80px;
   accent-color: var(--blue-2);
   cursor: pointer;
 }
 
-.frame-speed-control:has(input:disabled) {
+.frame-angle-control.is-disabled input[type='range'] {
+  cursor: default;
+}
+
+.frame-angle-value {
+  min-width: 40px;
+  text-align: right;
+  color: var(--blue-3);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ─── Exterior / Interior segmented toggle (row 2) ─────────────────────────── */
+.frame-view-toggle {
+  display: inline-flex;
+  align-items: center;
+  height: 34px;
+  padding: 3px;
+  gap: 3px;
+  border-radius: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  background: rgba(255, 255, 255, 0.035);
+  flex: 0 0 auto;
+}
+
+.frame-view-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 100%;
+  padding: 0 11px;
+  border: 0;
+  border-radius: 11px;
+  background: transparent;
+  color: rgba(255, 255, 255, .7);
+  font: 600 11.5px/1 var(--font-body);
+  letter-spacing: 0.01em;
+  cursor: pointer;
+  touch-action: manipulation;
+  white-space: nowrap;
+  transition: background var(--t), color var(--t), box-shadow var(--t);
+}
+
+.frame-view-btn--active {
+  background: linear-gradient(180deg, rgba(0, 149, 255, 0.95), rgba(0, 183, 255, 0.85));
+  color: #fff;
+  box-shadow: 0 4px 14px rgba(0, 149, 255, 0.30), 0 0 0 1px rgba(255, 255, 255, 0.10) inset;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .frame-view-btn:not(.frame-view-btn--active):hover {
+    color: #fff;
+    background: rgba(255, 255, 255, 0.06);
+  }
+}
+
+/* ─── Icon-only toggles (row 2, right side) ────────────────────────────────── */
+.frame-icon-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: 0 0 auto;
+}
+
+.frame-icon-btn {
+  width: 34px;
+  height: 34px;
+  display: inline-grid;
+  place-items: center;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  background: rgba(255, 255, 255, 0.035);
+  color: rgba(255, 255, 255, .82);
+  cursor: pointer;
+  touch-action: manipulation;
+  transition: background var(--t), border-color var(--t), box-shadow var(--t), color var(--t), transform var(--t);
+}
+
+.frame-icon-btn--active {
+  background: linear-gradient(180deg, rgba(0, 149, 255, 0.95), rgba(0, 183, 255, 0.85));
+  border-color: rgba(0, 183, 255, 0.55);
+  color: #fff;
+  box-shadow: 0 6px 18px rgba(0, 149, 255, 0.32), 0 0 0 1px rgba(255, 255, 255, 0.12) inset;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .frame-icon-btn:not(.frame-icon-btn--active):hover:not(:disabled) {
+    background: rgba(255, 255, 255, 0.06);
+    border-color: rgba(255, 255, 255, 0.10);
+    color: #fff;
+  }
+}
+
+.frame-icon-btn:active:not(:disabled) {
+  transform: translateY(1px);
+}
+
+.frame-icon-btn:disabled {
   opacity: .4;
+  cursor: default;
 }
 
 .frame-loading {
@@ -2216,22 +2343,18 @@
   border-color: var(--border-glow);
 }
 
-@media (max-width: 920px) {
+@media (max-width: 980px) {
   .frame-controls {
-    width: min(560px, calc(100% - 20px));
-    padding: 7px;
-    gap: 5px;
+    width: min(640px, calc(100% - 24px));
+    gap: 8px;
   }
 
   .frame-camera-control select {
     width: 96px;
   }
-
-  .frame-speed-control {
-    min-width: 0;
-  }
 }
 
+/* Mobile: stack into two rows — angle slider on top, controls below. */
 @media (max-width: 720px) {
   .frame-controls {
     left: max(10px, env(safe-area-inset-left));
@@ -2240,38 +2363,33 @@
     transform: none;
     width: auto;
     border-radius: 18px;
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    flex-direction: column;
     align-items: stretch;
-    gap: 6px;
-    padding: 8px;
+    gap: 8px;
+    padding: 9px;
   }
 
-  .frame-control,
-  .frame-camera-control,
-  .frame-speed-control {
+  .frame-row {
     width: 100%;
-    height: 40px;
-    justify-content: center;
-    padding: 0 12px;
-    font-size: 11.5px;
-    border-radius: 12px;
-    background: rgba(255, 255, 255, 0.04);
-    border: 1px solid rgba(255, 255, 255, 0.06);
   }
 
-  .frame-control--active {
-    background: linear-gradient(180deg, rgba(0, 149, 255, 0.95), rgba(0, 183, 255, 0.85));
+  .frame-row--main {
+    justify-content: space-between;
+    gap: 6px;
   }
 
-  .frame-control span:last-child {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+  /* Icon-only view toggle on mobile to keep the second row compact. */
+  .frame-view-btn {
+    padding: 0 10px;
+  }
+
+  .frame-view-btn span {
+    display: none;
   }
 
   .frame-camera-control {
-    grid-column: 1 / -1;
+    flex: 1 1 auto;
+    min-width: 0;
   }
 
   .frame-camera-control select {
@@ -2279,15 +2397,9 @@
     width: 100%;
   }
 
-  .frame-speed-control {
-    min-width: 0;
-    grid-column: 1 / -1;
-    justify-content: space-between;
-  }
-
-  .frame-speed-control input {
-    flex: 1;
-    width: auto;
+  .frame-icon-btn {
+    width: 36px;
+    height: 36px;
   }
 
   .frame-watermark {

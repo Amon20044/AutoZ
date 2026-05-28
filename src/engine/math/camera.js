@@ -66,6 +66,9 @@ export const DEFAULT_FRAME_CAMERA_SETTINGS = Object.freeze({
   mobileDistanceMultiplier: 1.4,
   editorPreviewDevice: 'desktop',
   editorPanEnabled: true,
+  // Center-of-mass offset (world units) applied to the geometric center. Acts
+  // as the pivot for the 360° orbit and the framing target of external presets.
+  orbitCenter: [0, 0, 0],
   presets: {
     auto: { offset: [0, 0, 0], targetOffset: [0, 0, 0], distanceScale: 1 },
     cockpit: { offset: [0, 0, 0], targetOffset: [0, 0, 0], distanceScale: 1 },
@@ -109,7 +112,9 @@ export function computeFrameCameraPreset({
   isMobile = false,
   cameraSettings = null,
 }) {
-  const center = vectorFromArray(frameInfo?.center, [0, 0.8, 0])
+  const rawCenter = vectorFromArray(frameInfo?.center, [0, 0.8, 0])
+  const orbitCenter = vectorFromArray(cameraSettings?.orbitCenter, [0, 0, 0])
+  const center = rawCenter.clone().add(orbitCenter)
   const size = vectorFromArray(frameInfo?.size, [6, 2, 3])
   const settings = getPresetSettings(cameraSettings, mode)
   const offset = vectorFromArray(settings.offset)
@@ -131,7 +136,7 @@ export function computeFrameCameraPreset({
   }
 
   if (mode === 'cockpit') {
-    const cockpitTarget = center.clone().add(targetOffset)
+    const cockpitTarget = rawCenter.clone().add(targetOffset)
 
     const cockpitPosition = cockpitTarget.clone().add(new THREE.Vector3(0.16 * size.x, 0.04 * height, Math.max(depth * 0.32, 1.05))).add(offset)
     return {

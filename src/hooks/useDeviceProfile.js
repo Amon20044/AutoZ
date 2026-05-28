@@ -53,7 +53,9 @@ export function getDeviceProfile(gl = null, performanceRegression = 0) {
       preferredLod: highMobile ? 'mobile-medium' : 'mobile-low',
       allowHighLod: highMobile,
       allowShadows: false,
-      allowPostprocessing: false,
+      // Always on — the gpuTier picks the cheap "lite" post pass (no bloom /
+      // aberration, downscaled target) so phones keep the graded look at low cost.
+      allowPostprocessing: true,
     }
   }
 
@@ -66,7 +68,7 @@ export function getDeviceProfile(gl = null, performanceRegression = 0) {
       preferredLod: 'tablet-low',
       allowHighLod: gpuTier !== 'low' && !regressed,
       allowShadows: gpuTier !== 'low',
-      allowPostprocessing: gpuTier === 'high' && !regressed,
+      allowPostprocessing: true,
     }
   }
 
@@ -78,7 +80,7 @@ export function getDeviceProfile(gl = null, performanceRegression = 0) {
     preferredLod: 'desktop-low',
     allowHighLod: !regressed,
     allowShadows: !regressed,
-    allowPostprocessing: !regressed,
+    allowPostprocessing: true,
   }
 }
 
