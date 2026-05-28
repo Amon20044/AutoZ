@@ -40,7 +40,8 @@ const WHEEL_SHOWCASE_SPEED = 2.4
 // while the smoothed FPS holds above the bar, climb the ladder one rung at a
 // time (preloading the next rung in a decoder worker first so the swap is
 // gapless). Climbing stops at the device/OS tier cap or when FPS can't hold.
-const UPGRADE_FPS = 42          // a touch above the 40 floor for hysteresis
+const UPGRADE_FPS = 45          // sustained smoothed FPS required to climb a rung
+const UPGRADE_SAMPLE_MS = 500   // climb sampling cadence (matches the FPS tracker)
 const UPGRADE_STABLE_TICKS = 3  // ~1.5s of healthy samples (500ms cadence) before a swap
 const UPGRADE_COOLDOWN_MS = 2500
 
@@ -743,7 +744,15 @@ function FrameRuntimeLoader({
   const previewUrlRef = useRef(null)
   const healthyRef = useRef(0)
   const lastSwapRef = useRef(0)
+  const lastTickRef = useRef(0)
   const preloadedRef = useRef(new Set())
+
+  // Latest smoothed FPS mirrored into a ref so the climb loop can read it every
+  // frame. The parent dedups identical FPS values (to avoid 2Hz re-renders), so
+  // a steady-but-healthy FPS produces no prop changes — which is why a useFrame
+  // loop, not an fps-dependency effect, drives the climb.
+  const fpsRef = useRef(fps)
+  fpsRef.current = fps
 
   // Reset progressive state when the source model (or device class) changes.
   useEffect(() => {
@@ -751,6 +760,7 @@ function FrameRuntimeLoader({
     setRung(0)
     healthyRef.current = 0
     lastSwapRef.current = 0
+    lastTickRef.current = 0
     preloadedRef.current = new Set()
   }, [assetManifest, deviceClass, onError])
 
@@ -778,12 +788,20 @@ function FrameRuntimeLoader({
     })
   }, [isLadder, ladder, ladderRung, onProgress])
 
-  // FPS-gated climb: while the smoothed FPS holds above the bar, warm the next
-  // rung in a decoder worker and swap it in once it has been stable for a beat.
-  useEffect(() => {
-    if (!isLadder || !ready || fps == null || rung >= maxRung) return
+  // FPS-gated climb, sampled on the tracker's 500ms cadence inside the render
+  // loop (a useFrame tick fires every frame even when no React state changes).
+  // While the smoothed FPS holds above the bar, warm the next rung in a decoder
+  // worker and swap it in once it has been stable for ~1.5s and past cooldown.
+  useFrame(() => {
+    if (!isLadder || !ready || rung >= maxRung) return
 
-    if (fps < UPGRADE_FPS) {
+    const now = performance.now()
+    if (now - lastTickRef.current < UPGRADE_SAMPLE_MS) return
+    lastTickRef.current = now
+
+    const currentFps = fpsRef.current
+    if (currentFps == null) return
+    if (currentFps < UPGRADE_FPS) {
       healthyRef.current = 0
       return
     }
@@ -797,13 +815,12 @@ function FrameRuntimeLoader({
       try { useGLTF.preload(nextUrl, '/decoders/draco/', true, extendLoader) } catch { /* best effort */ }
     }
 
-    const now = performance.now()
     if (healthyRef.current >= UPGRADE_STABLE_TICKS && now - lastSwapRef.current > UPGRADE_COOLDOWN_MS) {
       lastSwapRef.current = now
       healthyRef.current = 0
       setRung((current) => Math.min(current + 1, maxRung))
     }
-  }, [fps, ready, rung, maxRung, isLadder, ladder, extendLoader])
+  })
 
   // Free the drei cache for a rung we leave behind (and the last rung on unmount).
   useEffect(() => {
