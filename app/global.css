@@ -4104,6 +4104,7 @@
 
 .landing-trust-copy {
   display: flex;
+  align-items: start;
   flex-direction: column;
   gap: 6px;
   min-width: 0;
