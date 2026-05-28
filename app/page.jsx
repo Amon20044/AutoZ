@@ -198,10 +198,6 @@ export default function LandingPage() {
             </div>
           </div>
           <div className={`demo-frame-wrap ${demoReady ? 'is-ready' : ''}`} aria-label='Interactive 3D car demo'>
-            <div className='demo-frame-topbar'>
-              <span><i /> Live Fortuner demo</span>
-              <span>Interactive showroom</span>
-            </div>
             <iframe
               src='/frame/demo'
               title='AutoZ live car viewer'
