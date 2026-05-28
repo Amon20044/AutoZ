@@ -40,10 +40,24 @@ const WHEEL_SHOWCASE_SPEED = 2.4
 // while the smoothed FPS holds above the bar, climb the ladder one rung at a
 // time (preloading the next rung in a decoder worker first so the swap is
 // gapless). Climbing stops at the device/OS tier cap or when FPS can't hold.
-const UPGRADE_FPS = 45          // sustained smoothed FPS required to climb a rung
+const UPGRADE_FPS = 30          // sustained smoothed FPS required to climb a rung
 const UPGRADE_SAMPLE_MS = 500   // climb sampling cadence (matches the FPS tracker)
 const UPGRADE_STABLE_TICKS = 3  // ~1.5s of healthy samples (500ms cadence) before a swap
 const UPGRADE_COOLDOWN_MS = 2500
+
+// Ordered post-processing quality ladder. A device starts at the tier its
+// hardware earned at mount, then — only on mobile/tablet, where static detection
+// is coarse — ratchets *up* toward its hardware ceiling while measured FPS proves
+// the headroom. Climbing is one-way and latches off after any regression, so it
+// can't oscillate. (Oscillation is what tore down render targets and glitched the
+// preview before.) The downgrade direction stays owned by qualityMode.
+const PP_TIER_ORDER = ['low', 'medium', 'high', 'ultra']
+const ppRank = (tier) => {
+  const i = PP_TIER_ORDER.indexOf(tier)
+  return i < 0 ? 1 : i
+}
+const ppStepUp = (tier, steps) => PP_TIER_ORDER[Math.min(ppRank(tier) + steps, PP_TIER_ORDER.length - 1)]
+const ppFloor = (a, b) => (ppRank(a) <= ppRank(b) ? a : b)
 
 function getInitialFrameQualityMode(deviceCaps) {
   return deviceCaps.mobileTier === 'low' || deviceCaps.gpuTier === 'low' ? 'low' : 'balanced'
@@ -100,6 +114,8 @@ export default function FrameCanvas({ snapshot }) {
   const [frameInfo, setFrameInfo] = useState(null)
   const [fpsSample, setFpsSample] = useState({ fps: null, regression: 0 })
   const [qualityMode, setQualityMode] = useState(() => getInitialFrameQualityMode(deviceCaps))
+  // Runtime upward steps applied to the post-processing tier (hybrid quality).
+  const [ppBoost, setPpBoost] = useState(0)
   const [webglStatus, setWebglStatus] = useState('ready')
   // Once the first model is on screen we keep the canvas up during progressive
   // LOD swaps instead of flashing the full-screen spinner each time.
@@ -109,16 +125,35 @@ export default function FrameCanvas({ snapshot }) {
   const scrubbingRef = useRef(false)
   const hardwareLowRef = useRef(qualityMode === 'low')
   const healthySinceRef = useRef(0)
+  const ppBoostHealthyRef = useRef(0)
+  const lastPpBoostRef = useRef(0)
+  const ppBoostLatchedRef = useRef(false)
   const lightsOnRef = useRef(false)
   const wheelsOnRef = useRef(false)
   const isCockpit = cameraMode === 'cockpit'
   const orbitScrubEnabled = modelReady && cameraMode === 'auto'
   const performanceRegressed = qualityMode === 'low' || webglStatus === 'lost'
   const effectivePerformanceRegression = performanceRegressed ? 1 : (fpsSample.regression ?? 0)
-  const postprocessingTier = performanceRegressed ? 'low' : (deviceCaps.postprocessingTier ?? deviceCaps.gpuTier)
+  // Hybrid quality: static detection picks the floor, runtime FPS ratchets toward
+  // the ceiling (mobile/tablet only — desktop already detects accurately). The
+  // safety net still forces 'low' the instant frame rate can't hold.
+  const detectedPpTier = deviceCaps.postprocessingTier ?? deviceCaps.gpuTier
+  const ppCeiling = deviceCaps.maxPostprocessingTier ?? detectedPpTier
+  const boostedPpTier = ppFloor(ppStepUp(detectedPpTier, ppBoost), ppCeiling)
+  const canBoostPp = ppRank(ppCeiling) > ppRank(detectedPpTier)
+  const postprocessingTier = performanceRegressed ? 'low' : boostedPpTier
   const postprocessingEnabled = post.enabled !== false
     && deviceCaps.allowPostprocessing
     && webglStatus !== 'lost'
+  // Shadows are decided once — by the device tier + config — and then only ever
+  // turned OFF by a regression, never toggled back and forth. Gating on
+  // firstModelShown fixes the drei ContactShadows `frames={1}` race: the single
+  // baked frame must be captured *after* the car is in the scene, otherwise it
+  // bakes an empty shadow and the car looks like it's floating.
+  const shadowsEnabled = stage.shadows !== false
+    && firstModelShown
+    && !performanceRegressed
+    && deviceCaps.gpuTier !== 'low'
   const runtimeStage = useMemo(
     () => (performanceRegressed
       ? {
@@ -129,8 +164,8 @@ export default function FrameCanvas({ snapshot }) {
           environmentIntensity: Math.min(stage.environmentIntensity ?? 1.18, 0.9),
           backgroundIntensity: Math.min(stage.backgroundIntensity ?? 0.75, 0.55),
         }
-      : stage),
-    [performanceRegressed, stage],
+      : { ...stage, shadows: shadowsEnabled }),
+    [performanceRegressed, stage, shadowsEnabled],
   )
 
   const lightCount = runtime.registry?.headLights.length || runtime.registry?.lights.length || 0
@@ -274,6 +309,52 @@ export default function FrameCanvas({ snapshot }) {
       healthySinceRef.current = 0
     }
   }, [fpsSample.fps, fpsSample.regression, qualityMode])
+
+  // ─── Upward quality ratchet (hybrid: hardware floor + FPS-proven ceiling) ────
+  // Mobile/tablet detection is deliberately conservative, so a device that holds
+  // a high frame rate climbs to the heavier post-processing tier it can actually
+  // afford. A strict FPS bar + long stable window + cooldown keep it from
+  // thrashing, and it only ever steps up (the regression latch below is the only
+  // thing that walks it back).
+  useEffect(() => {
+    if (!canBoostPp || ppBoostLatchedRef.current || !firstModelShown) return
+    if (performanceRegressed || isScrubbing) {
+      ppBoostHealthyRef.current = 0
+      return
+    }
+    if (ppRank(boostedPpTier) >= ppRank(ppCeiling)) return
+
+    const fps = fpsSample.fps
+    const regression = fpsSample.regression ?? 0
+    if (fps == null) return
+
+    if (fps >= 56 && regression < 0.15) {
+      const now = performance.now()
+      if (!ppBoostHealthyRef.current) {
+        ppBoostHealthyRef.current = now
+        return
+      }
+      if (now - ppBoostHealthyRef.current > 7000 && now - lastPpBoostRef.current > 4000) {
+        lastPpBoostRef.current = now
+        ppBoostHealthyRef.current = 0
+        setPpBoost((steps) => steps + 1)
+      }
+    } else {
+      ppBoostHealthyRef.current = 0
+    }
+  }, [
+    canBoostPp, firstModelShown, performanceRegressed, isScrubbing,
+    boostedPpTier, ppCeiling, fpsSample.fps, fpsSample.regression,
+  ])
+
+  // A regression means the device couldn't hold the tier we climbed to — roll the
+  // boost back and latch it off so we never bounce in and out of the heavy shader
+  // (that thrash is exactly what used to tear down render targets and glitch).
+  useEffect(() => {
+    if (!performanceRegressed) return
+    ppBoostLatchedRef.current = true
+    setPpBoost((steps) => (steps > 0 ? 0 : steps))
+  }, [performanceRegressed])
 
   const handleWebglStatus = useCallback((status) => {
     setWebglStatus(status === 'lost' ? 'lost' : 'ready')
@@ -595,6 +676,7 @@ function FrameCameraRig({
   })
   const previousMode = useRef(mode)
   const autoSettleUntil = useRef(0)
+  const hasFramedRef = useRef(false)
   // Scratch objects for the manual 360° azimuth scrub — reused each frame.
   const scrubScratch = useRef({ offset: new THREE.Vector3(), spherical: new THREE.Spherical() })
 
@@ -628,7 +710,17 @@ function FrameCameraRig({
       controls.dampingFactor = 0.08
     }
 
-    autoSettleUntil.current = performance.now() + (previousMode.current === mode ? 500 : 650)
+    // Only re-frame (animate the camera) on a real mode change or the first time
+    // we receive model bounds. A progressive LOD swap re-emits frameInfo for the
+    // *same* car + mode — re-settling there is what yanked the camera back to the
+    // preset and produced the jerk. In that case we just refresh the distance
+    // limits above and leave the camera exactly where the user left it.
+    const modeChanged = previousMode.current !== mode
+    const firstFraming = Boolean(frameInfo) && !hasFramedRef.current
+    if (modeChanged || firstFraming || !frameInfo) {
+      autoSettleUntil.current = performance.now() + (modeChanged ? 650 : 500)
+    }
+    if (frameInfo) hasFramedRef.current = true
     previousMode.current = mode
   }, [cameraSettings, controlsRef, fallbackTarget, frameInfo, mode, rotateSpeed, size.height, size.width, snapshot.camera?.fov])
 

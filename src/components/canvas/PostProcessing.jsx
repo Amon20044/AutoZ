@@ -27,12 +27,21 @@ export function RendererSettings({ exposure = 1.1 }) {
 // (e.g. on an FPS dip during an LOD swap) recreates render targets and is what
 // caused the visible glitch on weaker phones.
 const TIER_BUDGET = {
+  ultra:  { samples: 8, scale: 1.00, lite: false },
   high:   { samples: 4, scale: 1.00, lite: false },
   medium: { samples: 2, scale: 0.85, lite: true },
   low:    { samples: 0, scale: 0.65, lite: true },
 }
 
 const TIER_LIMITS = {
+  ultra: {
+    glare: Infinity,
+    grain: Infinity,
+    vignette: Infinity,
+    bloomIntensity: Infinity,
+    sharpness: Infinity,
+    chromaticAberration: Infinity,
+  },
   high: {
     glare: Infinity,
     grain: Infinity,
@@ -218,8 +227,11 @@ export default function PostProcessing({ config = {}, tier = 'high', deviceClass
     nextScreen.frustumCulled = false
     nextScreenScene.add(nextScreen)
 
+    // 8× MSAA on the ultra tier only lands if the GPU exposes it; otherwise fall
+    // back to the highest the driver supports so we never request an unbacked count.
+    const maxSamples = gl.capabilities?.maxSamples ?? budget.samples
     const nextRenderTarget = new THREE.WebGLRenderTarget(512, 512, {
-      samples: budget.samples,
+      samples: Math.min(budget.samples, maxSamples),
       colorSpace: THREE.SRGBColorSpace,
       minFilter: THREE.LinearFilter,
       magFilter: THREE.LinearFilter,

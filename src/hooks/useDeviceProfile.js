@@ -34,8 +34,86 @@ function detectGpuTier({
   return 'medium'
 }
 
-const TIER_RANK = { low: 0, medium: 1, high: 2 }
+const TIER_RANK = { low: 0, medium: 1, high: 2, ultra: 3 }
 const minTier = (a, b) => (TIER_RANK[a] <= TIER_RANK[b] ? a : b)
+const maxTier = (a, b) => (TIER_RANK[a] >= TIER_RANK[b] ? a : b)
+
+// One-time synchronous GPU probe. The mount-locked profile in FrameCanvas calls
+// getDeviceProfile(null) *before* the R3F canvas exists, so without this we never
+// see the real MAX_TEXTURE_SIZE — it defaulted to 4096, which sits below the
+// desktop "high" threshold, which is why an RTX 4070 was stuck on the medium
+// shader. A throwaway context reads the true caps + unmasked GPU name once,
+// caches the result, then releases the context.
+let gpuProbe
+function probeGpu() {
+  if (gpuProbe !== undefined) return gpuProbe
+  if (typeof document === 'undefined') {
+    gpuProbe = { maxTextureSize: 0, renderer: '' }
+    return gpuProbe
+  }
+  try {
+    const canvas = document.createElement('canvas')
+    const gl = canvas.getContext('webgl2') || canvas.getContext('webgl')
+    if (!gl) {
+      gpuProbe = { maxTextureSize: 0, renderer: '' }
+      return gpuProbe
+    }
+    const maxTextureSize = gl.getParameter(gl.MAX_TEXTURE_SIZE) || 0
+    const ext = gl.getExtension('WEBGL_debug_renderer_info')
+    const renderer = ext
+      ? String(gl.getParameter(ext.UNMASKED_RENDERER_WEBGL) || '').toLowerCase()
+      : ''
+    gl.getExtension('WEBGL_lose_context')?.loseContext?.()
+    gpuProbe = { maxTextureSize, renderer }
+  } catch {
+    gpuProbe = { maxTextureSize: 0, renderer: '' }
+  }
+  return gpuProbe
+}
+
+/**
+ * Coarse GPU-family signal from the unmasked renderer string. We trust this
+ * *more* than the RAM/core heuristic, which can't tell an RTX 4070 from an
+ * integrated chip when both report 8GB / 8 cores. null = no strong signal, so
+ * the caller falls back to the heuristic.
+ */
+function classifyRendererTier(renderer) {
+  if (!renderer) return null
+  const r = renderer
+
+  // Software rasterizers / fallbacks — never premium, force the floor.
+  if (/swiftshader|llvmpipe|softpipe|software|microsoft basic|virgl/.test(r)) return 'low'
+
+  // Apple Silicon. "apple m1/m2/m3" is a powerhouse; Safari often masks the chip
+  // behind a generic "apple gpu", which is still a strong modern GPU.
+  if (/apple m\d/.test(r)) return 'ultra'
+  if (/apple gpu/.test(r)) return 'high'
+
+  // NVIDIA: any RTX is flagship-class; other GeForce/Quadro are at least high.
+  if (/\brtx\s*\d/.test(r)) return 'ultra'
+  if (/geforce|quadro|\bgtx\b|nvidia/.test(r)) return 'high'
+
+  // AMD: discrete Radeon RX/Pro are strong; integrated Vega/"Radeon Graphics" mid.
+  if (/radeon\s*(?:rx|pro)\b|\brx\s*\d{3,4}\b/.test(r)) return 'high'
+  if (/vega|radeon\s*graphics/.test(r)) return 'medium'
+
+  // Intel: Arc is discrete (capable); UHD/Iris/HD Graphics are integrated (mid).
+  if (/intel\s*arc|\barc\s*a\d/.test(r)) return 'high'
+  if (/intel|\buhd\b|iris|hd graphics/.test(r)) return 'medium'
+
+  return null
+}
+
+// Fuse the heuristic tier with the GPU-name signal. The signal wins when it's
+// confident: software → low, a named flagship → ultra/high, a named integrated
+// GPU caps the heuristic at medium so a roomy-but-weak laptop can't over-promise.
+function combineTier(heuristic, signal) {
+  if (!signal) return heuristic
+  if (signal === 'low') return 'low'
+  if (signal === 'ultra') return 'ultra'
+  if (signal === 'high') return maxTier(heuristic, 'high')
+  return minTier(heuristic, 'medium')
+}
 
 /**
  * Parse the mobile OS family + major version from the user-agent string.
@@ -97,11 +175,12 @@ export function getDeviceProfile(gl = null, performanceRegression = 0) {
   const memoryKnown = typeof navigator.deviceMemory === 'number'
   const deviceMemory = memoryKnown ? navigator.deviceMemory : (deviceClass === 'desktop' ? 8 : 6)
   const cores = navigator.hardwareConcurrency || 4
-  const maxTextureSize = gl?.capabilities?.maxTextureSize || 4096
+  const probe = probeGpu()
+  const maxTextureSize = gl?.capabilities?.maxTextureSize || probe.maxTextureSize || 4096
   const dpr = window.devicePixelRatio || 1
   const screenPixels = Math.max(width, 1) * Math.max(height, 1) * dpr * dpr
   const osInfo = detectMobileOS(ua)
-  const gpuTier = detectGpuTier({
+  const heuristicTier = detectGpuTier({
     deviceMemory,
     memoryKnown,
     cores,
@@ -111,6 +190,12 @@ export function getDeviceProfile(gl = null, performanceRegression = 0) {
     dpr,
     screenPixels,
   })
+  // Mobile keeps the carefully-tuned heuristic+OS path untouched; desktop/tablet
+  // fuse in the GPU-name signal so flagship silicon can reach 'ultra' and weak
+  // integrated chips get pinned to 'medium' regardless of RAM/core counts.
+  const gpuTier = deviceClass === 'mobile'
+    ? heuristicTier
+    : combineTier(heuristicTier, classifyRendererTier(probe.renderer))
   const regressed = performanceRegression > 0.5
 
   if (deviceClass === 'mobile') {
@@ -137,6 +222,10 @@ export function getDeviceProfile(gl = null, performanceRegression = 0) {
       allowShadows: false,
       allowPostprocessing: postprocessingTier !== 'off',
       postprocessingTier,
+      // Runtime FPS headroom can ratchet post-processing up to this ceiling (see
+      // FrameCanvas). Mobile detection is coarse/conservative, so a phone that
+      // sustains a high frame rate earns the heavy shader it was denied at mount.
+      maxPostprocessingTier: postprocessingTier === 'off' ? 'off' : reduced ? 'low' : 'high',
     }
   }
 
@@ -151,6 +240,7 @@ export function getDeviceProfile(gl = null, performanceRegression = 0) {
       allowShadows: gpuTier !== 'low',
       allowPostprocessing: true,
       postprocessingTier: regressed || gpuTier === 'low' ? 'low' : 'medium',
+      maxPostprocessingTier: gpuTier === 'low' ? 'low' : 'high',
     }
   }
 
