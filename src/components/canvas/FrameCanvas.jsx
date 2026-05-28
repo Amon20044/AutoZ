@@ -43,7 +43,18 @@ const WHEEL_SHOWCASE_SPEED = 2.4
 const UPGRADE_FPS = 30          // sustained smoothed FPS required to climb a rung
 const UPGRADE_SAMPLE_MS = 500   // climb sampling cadence (matches the FPS tracker)
 const UPGRADE_STABLE_TICKS = 3  // ~1.5s of healthy samples (500ms cadence) before a swap
-const UPGRADE_COOLDOWN_MS = 2500
+
+// Every upward quality climb — LOD rungs AND post-processing boosts — draws from
+// ONE shared budget so the viewer probes the device ceiling in a short, bounded
+// burst right after the model loads, then leaves the scene alone. At most
+// MAX_QUALITY_UPGRADES bumps, each at least UPGRADE_MIN_GAP_MS apart, all inside
+// UPGRADE_WINDOW_MS of the first rendered frame (5 × 6s ⇒ done within 30s). Once
+// the window closes nothing climbs again, so the buyer can orbit/zoom without
+// quality shifting under them. Downgrades (the FPS regression safety net) are
+// deliberately NOT budgeted — frame-rate protection may always kick in.
+const MAX_QUALITY_UPGRADES = 5
+const UPGRADE_WINDOW_MS = 30000
+const UPGRADE_MIN_GAP_MS = 6000
 
 // Ordered post-processing quality ladder. A device starts at the tier its
 // hardware earned at mount, then — only on mobile/tablet, where static detection
@@ -120,14 +131,18 @@ export default function FrameCanvas({ snapshot }) {
   // Once the first model is on screen we keep the canvas up during progressive
   // LOD swaps instead of flashing the full-screen spinner each time.
   const [firstModelShown, setFirstModelShown] = useState(false)
+  // Latches true the first time shadows render; from then on a regression may
+  // only lower their resolution, never switch them off.
+  const [shadowsLatched, setShadowsLatched] = useState(false)
   const controlsRef = useRef(null)
   const orbitAngleRef = useRef(0)
   const scrubbingRef = useRef(false)
   const hardwareLowRef = useRef(qualityMode === 'low')
   const healthySinceRef = useRef(0)
   const ppBoostHealthyRef = useRef(0)
-  const lastPpBoostRef = useRef(0)
   const ppBoostLatchedRef = useRef(false)
+  // Shared budget for every upward quality climb (see constants above).
+  const upgradeBudgetRef = useRef({ count: 0, lastAt: 0, windowStart: 0 })
   const lightsOnRef = useRef(false)
   const wheelsOnRef = useRef(false)
   const isCockpit = cameraMode === 'cockpit'
@@ -145,21 +160,24 @@ export default function FrameCanvas({ snapshot }) {
   const postprocessingEnabled = post.enabled !== false
     && deviceCaps.allowPostprocessing
     && webglStatus !== 'lost'
-  // Shadows are decided once — by the device tier + config — and then only ever
-  // turned OFF by a regression, never toggled back and forth. Gating on
-  // firstModelShown fixes the drei ContactShadows `frames={1}` race: the single
-  // baked frame must be captured *after* the car is in the scene, otherwise it
-  // bakes an empty shadow and the car looks like it's floating.
+  // Shadows turn on once — by the device tier + config, after the car is in the
+  // scene (the firstModelShown gate fixes the drei ContactShadows `frames={1}`
+  // race: a frame baked before the car is present captures an empty shadow and
+  // the car looks like it's floating). Once they've rendered they LATCH on for
+  // the rest of the session: a later regression may only cut their resolution,
+  // never remove them (popping the car off its floor mid-view is jarring).
   const shadowsEnabled = stage.shadows !== false
     && firstModelShown
-    && !performanceRegressed
     && deviceCaps.gpuTier !== 'low'
+    && (shadowsLatched || !performanceRegressed)
   const runtimeStage = useMemo(
     () => (performanceRegressed
       ? {
           ...stage,
-          shadows: false,
-          shadowResolution: 256,
+          // Keep shadows present if they were ever shown — only shed their cost
+          // (cheaper bake, no live updates), never switch them off.
+          shadows: shadowsEnabled,
+          shadowResolution: shadowsEnabled ? 512 : (stage.shadowResolution ?? 1024),
           liveShadows: false,
           environmentIntensity: Math.min(stage.environmentIntensity ?? 1.18, 0.9),
           backgroundIntensity: Math.min(stage.backgroundIntensity ?? 0.75, 0.55),
@@ -174,7 +192,17 @@ export default function FrameCanvas({ snapshot }) {
   useEffect(() => {
     setModelLoadError(null)
     setFirstModelShown(false)
+    setShadowsLatched(false)
+    upgradeBudgetRef.current = { count: 0, lastAt: 0, windowStart: 0 }
   }, [snapshot?.slug])
+
+  // Latch shadows ON the first time they qualify (model on screen, healthy, not a
+  // low-tier device). After this, shadowsEnabled stays true through regressions.
+  useEffect(() => {
+    if (stage.shadows !== false && firstModelShown && !performanceRegressed && deviceCaps.gpuTier !== 'low') {
+      setShadowsLatched(true)
+    }
+  }, [stage.shadows, firstModelShown, performanceRegressed, deviceCaps.gpuTier])
 
   const handleRuntimeReady = useCallback((nextRuntime) => {
     setRuntime(nextRuntime)
@@ -310,6 +338,35 @@ export default function FrameCanvas({ snapshot }) {
     }
   }, [fpsSample.fps, fpsSample.regression, qualityMode])
 
+  // Open the shared upgrade window the instant the first model frame is on screen
+  // (so no climb ever happens before load), and arm the gap so even the first
+  // bump waits one full interval. Both the post-processing boost below and the
+  // LOD climb in FrameRuntimeLoader spend from this same budget.
+  useEffect(() => {
+    if (!firstModelShown) return
+    const budget = upgradeBudgetRef.current
+    if (budget.windowStart) return
+    const now = performance.now()
+    budget.windowStart = now
+    budget.lastAt = now
+  }, [firstModelShown])
+
+  // Grant one quality climb iff the shared budget still has room: inside the 30s
+  // window, under the 5-bump cap, and past the 6s inter-upgrade gap. Mutates and
+  // returns synchronously so the parent effect and the in-canvas render loop can
+  // share it without a race.
+  const tryConsumeUpgrade = useCallback(() => {
+    const budget = upgradeBudgetRef.current
+    if (!budget.windowStart) return false
+    const now = performance.now()
+    if (budget.count >= MAX_QUALITY_UPGRADES) return false
+    if (now - budget.windowStart > UPGRADE_WINDOW_MS) return false
+    if (now - budget.lastAt < UPGRADE_MIN_GAP_MS) return false
+    budget.count += 1
+    budget.lastAt = now
+    return true
+  }, [])
+
   // ─── Upward quality ratchet (hybrid: hardware floor + FPS-proven ceiling) ────
   // Mobile/tablet detection is deliberately conservative, so a device that holds
   // a high frame rate climbs to the heavier post-processing tier it can actually
@@ -334,8 +391,9 @@ export default function FrameCanvas({ snapshot }) {
         ppBoostHealthyRef.current = now
         return
       }
-      if (now - ppBoostHealthyRef.current > 7000 && now - lastPpBoostRef.current > 4000) {
-        lastPpBoostRef.current = now
+      // Confirm the headroom is sustained (averaged, not a single spike), then
+      // spend one shared upgrade. The 6s spacing + 5-bump cap live in the budget.
+      if (now - ppBoostHealthyRef.current > 1500 && tryConsumeUpgrade()) {
         ppBoostHealthyRef.current = 0
         setPpBoost((steps) => steps + 1)
       }
@@ -344,7 +402,7 @@ export default function FrameCanvas({ snapshot }) {
     }
   }, [
     canBoostPp, firstModelShown, performanceRegressed, isScrubbing,
-    boostedPpTier, ppCeiling, fpsSample.fps, fpsSample.regression,
+    boostedPpTier, ppCeiling, fpsSample.fps, fpsSample.regression, tryConsumeUpgrade,
   ])
 
   // A regression means the device couldn't hold the tier we climbed to — roll the
@@ -441,6 +499,7 @@ export default function FrameCanvas({ snapshot }) {
                 performanceRegression={effectivePerformanceRegression}
                 fps={fpsSample.fps}
                 ready={modelReady}
+                onTryUpgrade={tryConsumeUpgrade}
               />
             )}
           </Suspense>
@@ -807,6 +866,7 @@ function buildLodLadder(assetManifest, deviceClass) {
 
 function FrameRuntimeLoader({
   snapshot, onReady, onProgress, onError, showPartLabels, performanceRegression = 0, fps = null, ready = false,
+  onTryUpgrade = null,
 }) {
   const gl = useThree((state) => state.gl)
   const regressionLevel = performanceRegression > 0.5 ? 1 : 0
@@ -837,7 +897,6 @@ function FrameRuntimeLoader({
   const [blobUrl, setBlobUrl] = useState(null) // chunked/direct path (no device LODs)
   const previewUrlRef = useRef(null)
   const healthyRef = useRef(0)
-  const lastSwapRef = useRef(0)
   const lastTickRef = useRef(0)
   const preloadedRef = useRef(new Set())
 
@@ -853,7 +912,6 @@ function FrameRuntimeLoader({
     onError?.(null)
     setRung(0)
     healthyRef.current = 0
-    lastSwapRef.current = 0
     lastTickRef.current = 0
     preloadedRef.current = new Set()
   }, [assetManifest, deviceClass, onError])
@@ -885,7 +943,8 @@ function FrameRuntimeLoader({
   // FPS-gated climb, sampled on the tracker's 500ms cadence inside the render
   // loop (a useFrame tick fires every frame even when no React state changes).
   // While the smoothed FPS holds above the bar, warm the next rung in a decoder
-  // worker and swap it in once it has been stable for ~1.5s and past cooldown.
+  // worker and swap it in once it has been stable for ~1.5s and the shared
+  // upgrade budget grants the bump (5 max, 6s apart, within 30s of load).
   useFrame(() => {
     if (!isLadder || !ready || rung >= maxRung) return
 
@@ -909,8 +968,9 @@ function FrameRuntimeLoader({
       try { useGLTF.preload(nextUrl, '/decoders/draco/', true, extendLoader) } catch { /* best effort */ }
     }
 
-    if (healthyRef.current >= UPGRADE_STABLE_TICKS && now - lastSwapRef.current > UPGRADE_COOLDOWN_MS) {
-      lastSwapRef.current = now
+    // Healthy + stable (averaged over several ticks): spend one shared upgrade.
+    // The 6s spacing, 5-bump cap, and 30s window all live in the budget.
+    if (healthyRef.current >= UPGRADE_STABLE_TICKS && onTryUpgrade?.()) {
       healthyRef.current = 0
       setRung((current) => Math.min(current + 1, maxRung))
     }
