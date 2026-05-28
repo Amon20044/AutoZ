@@ -25,12 +25,12 @@ import {
 } from 'lucide-react'
 
 const TEAM_FLOW = [
-  { num: '01', icon: Boxes,      role: '3D artist',    action: 'Names the meshes',       outcome: 'Clean GLB, hinges marked' },
-  { num: '02', icon: Palette,    role: 'Brand studio', action: 'Tunes paint & cameras',  outcome: 'Locked-in showroom look' },
-  { num: '03', icon: Rocket,     role: 'Product team', action: 'Clicks Publish',         outcome: 'Frozen iframe URL goes live' },
-  { num: '04', icon: Store,      role: 'Web team',     action: 'Pastes one iframe',      outcome: 'Live on dealer pages in 1 line' },
-  { num: '05', icon: Smartphone, role: 'Buyer',        action: 'Opens doors on mobile',  outcome: 'Converts to test-drive' },
-  { num: '06', icon: Gauge,      role: 'Investor',     action: 'Sees the pipeline',      outcome: 'Per-model unit economics' },
+  { num: '01', icon: Boxes, role: '3D artist', action: 'Names the meshes', outcome: 'Clean GLB, hinges marked' },
+  { num: '02', icon: Palette, role: 'Brand studio', action: 'Tunes paint & cameras', outcome: 'Locked-in showroom look' },
+  { num: '03', icon: Rocket, role: 'Product team', action: 'Clicks Publish', outcome: 'Frozen iframe URL goes live' },
+  { num: '04', icon: Store, role: 'Web team', action: 'Pastes one iframe', outcome: 'Live on dealer pages in 1 line' },
+  { num: '05', icon: Smartphone, role: 'Buyer', action: 'Opens doors on mobile', outcome: 'Converts to test-drive' },
+  { num: '06', icon: Gauge, role: 'Investor', action: 'Sees the pipeline', outcome: 'Per-model unit economics' },
 ]
 
 const TIME_ROWS = [
@@ -197,10 +197,6 @@ export default function LandingPage() {
             </div>
           </div>
           <div className={`demo-frame-wrap ${demoReady ? 'is-ready' : ''}`} aria-label='Interactive 3D car demo'>
-            <div className='demo-frame-topbar'>
-              <span><i /> Live Fortuner demo</span>
-              <span>Interactive showroom</span>
-            </div>
             <iframe
               src='/frame/demo'
               title='AutoZ live car viewer'
