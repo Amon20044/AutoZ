@@ -45,15 +45,8 @@ const UPGRADE_SAMPLE_MS = 500   // climb sampling cadence (matches the FPS track
 const UPGRADE_STABLE_TICKS = 3  // ~1.5s of healthy samples (500ms cadence) before a swap
 const UPGRADE_COOLDOWN_MS = 2500
 
-function getInitialFrameQualityMode() {
-  if (typeof window === 'undefined') return 'balanced'
-
-  const memory = navigator.deviceMemory || 4
-  const cores = navigator.hardwareConcurrency || 4
-  const mobile = window.innerWidth < 720 || /Android|iPhone|iPod|Mobile/i.test(navigator.userAgent || '')
-  const lowEnd = memory <= 4 || cores <= 4
-
-  return mobile || lowEnd ? 'low' : 'balanced'
+function getInitialFrameQualityMode(deviceCaps) {
+  return deviceCaps.mobileTier === 'low' || deviceCaps.gpuTier === 'low' ? 'low' : 'balanced'
 }
 
 function attachContextRecovery(renderer, label, onStatus) {
@@ -106,7 +99,7 @@ export default function FrameCanvas({ snapshot }) {
   const [isScrubbing, setIsScrubbing] = useState(false)
   const [frameInfo, setFrameInfo] = useState(null)
   const [fpsSample, setFpsSample] = useState({ fps: null, regression: 0 })
-  const [qualityMode, setQualityMode] = useState(() => getInitialFrameQualityMode())
+  const [qualityMode, setQualityMode] = useState(() => getInitialFrameQualityMode(deviceCaps))
   const [webglStatus, setWebglStatus] = useState('ready')
   // Once the first model is on screen we keep the canvas up during progressive
   // LOD swaps instead of flashing the full-screen spinner each time.
@@ -122,6 +115,10 @@ export default function FrameCanvas({ snapshot }) {
   const orbitScrubEnabled = modelReady && cameraMode === 'auto'
   const performanceRegressed = qualityMode === 'low' || webglStatus === 'lost'
   const effectivePerformanceRegression = performanceRegressed ? 1 : (fpsSample.regression ?? 0)
+  const postprocessingTier = performanceRegressed ? 'low' : (deviceCaps.postprocessingTier ?? deviceCaps.gpuTier)
+  const postprocessingEnabled = post.enabled !== false
+    && deviceCaps.allowPostprocessing
+    && webglStatus !== 'lost'
   const runtimeStage = useMemo(
     () => (performanceRegressed
       ? {
@@ -380,8 +377,13 @@ export default function FrameCanvas({ snapshot }) {
           }}
         />
 
-        {post.enabled !== false && deviceCaps.allowPostprocessing && (
-          <PostProcessing config={post} tier={deviceCaps.gpuTier} deviceClass={deviceCaps.deviceClass} />
+        {postprocessingEnabled && (
+          <PostProcessing
+            key={postprocessingTier}
+            config={post}
+            tier={postprocessingTier}
+            deviceClass={deviceCaps.deviceClass}
+          />
         )}
       </Canvas>
 

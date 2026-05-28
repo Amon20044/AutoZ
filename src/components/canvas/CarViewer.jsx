@@ -57,6 +57,7 @@ export default function CarViewer({
   const animation = sceneConfig.animation ?? {}
   const cam = sceneConfig.camera ?? {}
   const post = sceneConfig.postprocessing ?? {}
+  const postprocessingTier = deviceCaps.postprocessingTier ?? deviceCaps.gpuTier
   const backgroundColor = stage.backgroundColor ?? env.backgroundColor ?? '#f7f7f4'
   const reflectionIntensity = stage.environmentIntensity ?? 1.18
   const orbitTarget = useMemo(() => orbitTargetFromImport(sceneConfig.import, [0, 0.8, 0]), [sceneConfig.import])
@@ -189,7 +190,7 @@ export default function CarViewer({
 
         <Preload all />
         {post.enabled !== false && deviceCaps.allowPostprocessing && (
-          <PostProcessing config={post} tier={deviceCaps.gpuTier} deviceClass={deviceCaps.deviceClass} />
+          <PostProcessing config={post} tier={postprocessingTier} deviceClass={deviceCaps.deviceClass} />
         )}
       </Canvas>
       </div>

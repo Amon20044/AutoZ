@@ -2,9 +2,35 @@
 
 import { useEffect, useMemo, useState } from 'react'
 
-function detectGpuTier({ deviceMemory, cores, maxTextureSize, isMobile }) {
-  if (isMobile && (deviceMemory <= 4 || cores <= 4 || maxTextureSize <= 4096)) return 'low'
-  if (deviceMemory >= 8 && cores >= 8 && maxTextureSize >= 8192) return 'high'
+function detectGpuTier({
+  deviceMemory,
+  memoryKnown,
+  cores,
+  maxTextureSize,
+  isMobile,
+  osInfo,
+  dpr,
+  screenPixels,
+}) {
+  if (!isMobile) {
+    if (deviceMemory >= 8 && cores >= 8 && maxTextureSize >= 8192) return 'high'
+    if (deviceMemory <= 4 || cores <= 4 || maxTextureSize <= 2048) return 'low'
+    return 'medium'
+  }
+
+  const oldMobileOS = (osInfo.os === 'ios' && osInfo.version > 0 && osInfo.version <= 13)
+    || (osInfo.os === 'android' && osInfo.version > 0 && osInfo.version <= 9)
+  if (oldMobileOS || (memoryKnown && deviceMemory <= 3) || cores <= 4 || maxTextureSize <= 2048) {
+    return 'low'
+  }
+
+  const memoryOk = !memoryKnown || deviceMemory >= 6
+  const textureOk = maxTextureSize >= 4096
+  const iosHigh = osInfo.os === 'ios' && osInfo.version >= 17 && cores >= 6 && dpr >= 2.5 && memoryOk
+  const androidHigh = osInfo.os === 'android' && osInfo.version >= 13 && cores >= 8 && memoryOk && textureOk
+  const largeModernScreen = screenPixels >= 1800000 && dpr >= 2.5
+  if ((iosHigh || androidHigh || largeModernScreen) && textureOk) return 'high'
+
   return 'medium'
 }
 
@@ -32,6 +58,16 @@ function osQualityTier({ os, version }) {
   return 'medium'
 }
 
+function mobilePostprocessingTier({ mobileTier, osInfo, regressed }) {
+  if ((osInfo.os === 'android' && osInfo.version > 0 && osInfo.version <= 8)
+    || (osInfo.os === 'ios' && osInfo.version > 0 && osInfo.version <= 12)) {
+    return 'off'
+  }
+  if (regressed || mobileTier === 'low') return 'low'
+  if (mobileTier === 'high') return 'high'
+  return 'medium'
+}
+
 export function getDeviceProfile(gl = null, performanceRegression = 0) {
   if (typeof window === 'undefined') {
     return {
@@ -43,10 +79,12 @@ export function getDeviceProfile(gl = null, performanceRegression = 0) {
       allowHighLod: true,
       allowShadows: true,
       allowPostprocessing: true,
+      postprocessingTier: 'medium',
     }
   }
 
   const width = window.innerWidth
+  const height = window.innerHeight
   const ua = navigator.userAgent || ''
   const isMobileUa = /Android|iPhone|iPod|Mobile/i.test(ua)
   const isTabletUa = /iPad|Tablet/i.test(ua)
@@ -56,14 +94,22 @@ export function getDeviceProfile(gl = null, performanceRegression = 0) {
       ? 'tablet'
       : 'desktop'
 
-  const deviceMemory = navigator.deviceMemory || (deviceClass === 'desktop' ? 8 : 4)
+  const memoryKnown = typeof navigator.deviceMemory === 'number'
+  const deviceMemory = memoryKnown ? navigator.deviceMemory : (deviceClass === 'desktop' ? 8 : 6)
   const cores = navigator.hardwareConcurrency || 4
   const maxTextureSize = gl?.capabilities?.maxTextureSize || 4096
+  const dpr = window.devicePixelRatio || 1
+  const screenPixels = Math.max(width, 1) * Math.max(height, 1) * dpr * dpr
+  const osInfo = detectMobileOS(ua)
   const gpuTier = detectGpuTier({
     deviceMemory,
+    memoryKnown,
     cores,
     maxTextureSize,
     isMobile: deviceClass === 'mobile',
+    osInfo,
+    dpr,
+    screenPixels,
   })
   const regressed = performanceRegression > 0.5
 
@@ -72,10 +118,10 @@ export function getDeviceProfile(gl = null, performanceRegression = 0) {
     // more conservative of the two. A modern OS never promises more than the
     // RAM/core/texture check allows, but an old OS (e.g. iOS 13 / Android 9)
     // can pull a phone down to the reduced tier even if it looks capable.
-    const osInfo = detectMobileOS(ua)
     const mobileTier = regressed ? 'low' : minTier(gpuTier, osQualityTier(osInfo))
     const high = mobileTier === 'high'
     const reduced = mobileTier === 'low'
+    const postprocessingTier = mobilePostprocessingTier({ mobileTier, osInfo, regressed })
     return {
       deviceClass,
       gpuTier,
@@ -85,13 +131,12 @@ export function getDeviceProfile(gl = null, performanceRegression = 0) {
       // Flagship/modern phones earn a sharper 2x ceiling; the runtime FPS guard
       // still drops this back to 1 if it can't hold frame rate.
       maxDpr: high ? 2 : reduced ? 1 : 1.5,
-      maxTextureSize: reduced ? 512 : Math.min(maxTextureSize, 1024),
+      maxTextureSize: high ? Math.min(maxTextureSize, 2048) : reduced ? 512 : Math.min(maxTextureSize, 1024),
       preferredLod: reduced ? 'mobile-low' : 'mobile-medium',
       allowHighLod: !reduced,
       allowShadows: false,
-      // Always on — the gpuTier picks the cheap "lite" post pass (no bloom /
-      // aberration, downscaled target) so phones keep the graded look at low cost.
-      allowPostprocessing: true,
+      allowPostprocessing: postprocessingTier !== 'off',
+      postprocessingTier,
     }
   }
 
@@ -105,6 +150,7 @@ export function getDeviceProfile(gl = null, performanceRegression = 0) {
       allowHighLod: gpuTier !== 'low' && !regressed,
       allowShadows: gpuTier !== 'low',
       allowPostprocessing: true,
+      postprocessingTier: regressed || gpuTier === 'low' ? 'low' : 'medium',
     }
   }
 
@@ -117,6 +163,7 @@ export function getDeviceProfile(gl = null, performanceRegression = 0) {
     allowHighLod: !regressed,
     allowShadows: !regressed,
     allowPostprocessing: true,
+    postprocessingTier: regressed ? 'low' : gpuTier,
   }
 }
 

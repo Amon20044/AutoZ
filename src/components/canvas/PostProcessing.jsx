@@ -32,6 +32,46 @@ const TIER_BUDGET = {
   low:    { samples: 0, scale: 0.65, lite: true },
 }
 
+const TIER_LIMITS = {
+  high: {
+    glare: Infinity,
+    grain: Infinity,
+    vignette: Infinity,
+    bloomIntensity: Infinity,
+    sharpness: Infinity,
+    chromaticAberration: Infinity,
+  },
+  medium: {
+    glare: 0.35,
+    grain: 0.055,
+    vignette: 0.18,
+    bloomIntensity: 0.25,
+    sharpness: 0.08,
+    chromaticAberration: 0.0005,
+  },
+  low: {
+    glare: 0.12,
+    grain: 0.035,
+    vignette: 0.12,
+    bloomIntensity: 0.1,
+    sharpness: 0.04,
+    chromaticAberration: 0.0002,
+  },
+}
+
+function resolveBudget(tier, deviceClass) {
+  const budget = TIER_BUDGET[tier] ?? TIER_BUDGET.high
+  if (deviceClass === 'mobile' && tier === 'medium') {
+    return { ...budget, samples: 0, scale: 0.78 }
+  }
+  return budget
+}
+
+function cap(value, fallback, max) {
+  const next = value ?? fallback
+  return Number.isFinite(max) ? Math.min(next, max) : next
+}
+
 function buildFragmentShader({ lite }) {
   // Heavy shader: bloom (8-tap), chromatic aberration, unsharp-mask sharpen,
   // grain, vignette, contrast, saturation. Used for desktop / high-tier tablet.
@@ -165,10 +205,11 @@ function buildFragmentShader({ lite }) {
 export default function PostProcessing({ config = {}, tier = 'high', deviceClass = 'desktop' }) {
   const [dpr, size, gl] = useThree((state) => [state.viewport.dpr, state.size, state.gl])
 
-  // Pin the budget for this session. Re-mounting only happens if the parent
-  // changes the gate (which it shouldn't anymore — the gate is now derived from
-  // a static device profile, not runtime FPS).
-  const budget = useMemo(() => TIER_BUDGET[tier] ?? TIER_BUDGET.high, [tier])
+  // Pin the render-target budget for this component lifetime. The frame canvas
+  // changes the key when auto quality drops to a cheaper tier, so the target and
+  // shader are recreated deliberately instead of thrashing during every FPS tick.
+  const budget = useMemo(() => resolveBudget(tier, deviceClass), [deviceClass, tier])
+  const limits = TIER_LIMITS[tier] ?? TIER_LIMITS.high
 
   const [screenCamera, screenScene, screen, renderTarget] = useMemo(() => {
     const nextScreenScene = new THREE.Scene()
@@ -238,15 +279,15 @@ export default function PostProcessing({ config = {}, tier = 'high', deviceClass
   useFrame(({ scene, camera }, delta) => {
     const uniforms = screen.material.uniforms
     uniforms.time.value += delta
-    uniforms.glare.value = config.glare ?? 0
-    uniforms.grain.value = config.grain ?? 0
-    uniforms.vignette.value = config.vignette ?? 0
+    uniforms.glare.value = cap(config.glare, 0, limits.glare)
+    uniforms.grain.value = cap(config.grain, 0, limits.grain)
+    uniforms.vignette.value = cap(config.vignette, 0, limits.vignette)
     uniforms.contrast.value = config.contrast ?? 1
     uniforms.saturation.value = config.saturation ?? 1
     uniforms.bloomThreshold.value = config.bloomThreshold ?? 0.62
-    uniforms.bloomIntensity.value = config.bloomIntensity ?? 0.28
-    uniforms.sharpness.value = config.sharpness ?? 0.08
-    uniforms.chromaticAberration.value = config.chromaticAberration ?? 0.0008
+    uniforms.bloomIntensity.value = cap(config.bloomIntensity, 0.28, limits.bloomIntensity)
+    uniforms.sharpness.value = cap(config.sharpness, 0.08, limits.sharpness)
+    uniforms.chromaticAberration.value = cap(config.chromaticAberration, 0.0008, limits.chromaticAberration)
 
     gl.setRenderTarget(renderTarget)
     gl.render(scene, camera)
