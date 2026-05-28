@@ -8,25 +8,29 @@ import {
   BrainCircuit,
   Camera,
   Check,
+  Clock,
   DoorOpen,
   Gauge,
   Lightbulb,
   Monitor,
   Palette,
+  Play,
+  Rocket,
   ShieldCheck,
   Smartphone,
   Store,
   Upload,
   Wand2,
+  Zap,
 } from 'lucide-react'
 
-const AUDIENCES = [
-  ['Automotive brands', 'Launch a model configurator in one day', 'Upload a GLB, configure interactions, publish an iframe. No custom Three.js sprint.'],
-  ['3D artists / riggers', 'Name it right. Everything else is automatic.', 'Follow the mesh naming guide. AutoZ detects parts, pivots, animations, and UI controls.'],
-  ['Product teams', 'Update cameras and colors without engineers', 'Change camera presets, lighting, materials, shadows, and mobile previews in the editor.'],
-  ['Platform teams', 'One iframe. Every car. No maintenance.', 'Immutable publish URLs keep old embeds stable while new snapshots can ship safely.'],
-  ['Dealerships', 'Interactive inventory, live on your site', 'Doors open, lights turn on, wheels spin, camera angles work on desktop and mobile.'],
-  ['Investors', 'A repeatable SaaS pipeline', 'Per-model publishing replaces bespoke viewer builds with a scalable production workflow.'],
+const TEAM_FLOW = [
+  { num: '01', icon: Boxes,      role: '3D artist',    action: 'Names the meshes',       outcome: 'Clean GLB, hinges marked' },
+  { num: '02', icon: Palette,    role: 'Brand studio', action: 'Tunes paint & cameras',  outcome: 'Locked-in showroom look' },
+  { num: '03', icon: Rocket,     role: 'Product team', action: 'Clicks Publish',         outcome: 'Frozen iframe URL goes live' },
+  { num: '04', icon: Store,      role: 'Web team',     action: 'Pastes one iframe',      outcome: 'Live on dealer pages in 1 line' },
+  { num: '05', icon: Smartphone, role: 'Buyer',        action: 'Opens doors on mobile',  outcome: 'Converts to test-drive' },
+  { num: '06', icon: Gauge,      role: 'Investor',     action: 'Sees the pipeline',      outcome: 'Per-model unit economics' },
 ]
 
 const TIME_ROWS = [
@@ -47,6 +51,12 @@ const FEATURES = [
   [Camera, 'Camera studio', 'Desktop/mobile preview, preset editing, cockpit yaw, pan control, and publish-safe frame modes.'],
   [Palette, 'Material controls', 'Body color, glass, chrome, rubber, reflection tuning, HDRI lighting, and post FX.'],
   [ShieldCheck, 'Embeddable runtime', 'Locked panning in production frames, stable URLs, and device-aware rendering defaults.'],
+]
+
+const HERO_METRICS = [
+  ['10 min', 'from GLB to live iframe'],
+  ['$35k+', 'saved per custom viewer'],
+  ['0 code', 'for updates after launch'],
 ]
 
 const PRICING = [
@@ -98,45 +108,110 @@ export default function LandingPage() {
     <main className='landing-root landing-v2'>
       <nav className='landing-nav'>
         <Link href='/' className='landing-brand'>
-          <span />
-          AutoZ Engine
+          <span className='landing-brand-mark' />
+          <span className='landing-brand-copy'>
+            <strong>AutoZ</strong>
+            <small>Engine</small>
+          </span>
         </Link>
+        <input
+          id='landing-nav-toggle'
+          className='landing-nav-toggle'
+          type='checkbox'
+          aria-label='Toggle navigation menu'
+        />
+        <label htmlFor='landing-nav-toggle' className='landing-nav-burger' aria-hidden='true'>
+          <span className='landing-nav-burger-bars'><i /><i /><i /></span>
+        </label>
+        <label htmlFor='landing-nav-toggle' className='landing-nav-backdrop' aria-hidden='true' />
         <div className='landing-nav-links'>
-          <a href='#workflow'>Workflow</a>
-          <a href='#pricing'>Pricing</a>
-          <Link href='/taxonomy/docs/vehicles'>Artist guide</Link>
-          <Link href='/editor'>Open Editor</Link>
+          <a href='#workflow'><Wand2 size={14} /> Workflow</a>
+          <a href='#pricing'><Gauge size={14} /> Pricing</a>
+          <Link href='/taxonomy/docs/vehicles'><Boxes size={14} /> Artist guide</Link>
+        </div>
+        <div className='landing-nav-actions'>
+          <Link href='/editor'>Open Studio <ArrowRight size={14} /></Link>
         </div>
       </nav>
 
       <section className='landing-hero-v2'>
-        <div className={`demo-frame-wrap ${demoReady ? 'is-ready' : ''}`} aria-label='Interactive 3D car demo'>
-          <iframe
-            src='/frame/demo'
-            title='AutoZ live car viewer'
-            allow='accelerometer; ambient-light-sensor; encrypted-media; gyroscope; xr-spatial-tracking'
-            allowFullScreen
-          />
-          <div className='demo-frame-overlay' aria-hidden={demoReady}>
-            <div className='demo-frame-sheen' />
-            <div className='demo-frame-glow' />
-            <div className='demo-frame-spinner' />
-            <div className='demo-frame-copy'>
-              <strong>Spinning up the demo</strong>
-              <span>Streaming the optimized GLB · ~29 MB on first visit</span>
+        <div className='landing-hero-copy'>
+          <h1>Turn any 3D car model into a sellable web experience.</h1>
+          <p>
+            AutoZ gives brands, studios, and dealerships a premium 3D configurator pipeline:
+            upload a GLB, auto-detect parts, tune materials and cameras, then publish a stable iframe
+            your sales team can embed anywhere.
+          </p>
+          <div className='landing-actions'>
+            <Link href='/editor' className='landing-primary'>Launch Studio <Rocket size={16} /></Link>
+            <a href='#pricing' className='landing-secondary'><Play size={15} /> See the offer</a>
+          </div>
+          <div className='landing-hero-proof' aria-label='AutoZ business metrics'>
+            {HERO_METRICS.map(([value, label]) => (
+              <div key={label}>
+                <strong>{value}</strong>
+                <span>{label}</span>
+              </div>
+            ))}
+          </div>
+          <div className='landing-trust' aria-label='Customer trust'>
+            <div className='landing-trust-avatars' aria-hidden='true'>
+              {['AZ', 'EV', '3D', 'GT', 'XR'].map((label) => <span key={label}>{label}</span>)}
+            </div>
+            <div className='landing-trust-copy'>
+              <div className='landing-trust-stars' aria-label='5 out of 5 stars'>
+                {[0, 1, 2, 3, 4].map((i) => <span key={i}>★</span>)}
+              </div>
+              <p>
+                <strong>10+ automobile brands</strong>
+                <span> shipping interactive viewers with AutoZ.</span>
+              </p>
             </div>
           </div>
         </div>
-        <div className='landing-hero-copy'>
-          <div className='landing-kicker'>Config-driven 3D automotive SaaS</div>
-          <h1>Publish premium car viewers without custom Three.js work.</h1>
-          <p>
-            AutoZ turns raw GLB car models into interactive, embeddable product experiences with part detection,
-            smooth animations, camera presets, material controls, and mobile-ready iframe publishing.
-          </p>
-          <div className='landing-actions'>
-            <Link href='/editor' className='landing-primary'>Open Editor <ArrowRight size={16} /></Link>
-            <a href='#pricing' className='landing-secondary'>View pricing</a>
+        <div className='demo-stage'>
+          <div className='demo-signals' aria-label='Live runtime signals'>
+            <div className='demo-signal'>
+              <span className='demo-signal-pulse' aria-hidden='true'><span /></span>
+              <Boxes size={14} />
+              <div className='demo-signal-body'>
+                <strong>Auto-detected</strong>
+                <span>Doors · Lights · Wheels · Paint</span>
+              </div>
+            </div>
+            <div className='demo-signal'>
+              <span className='demo-signal-pulse' aria-hidden='true'><span /></span>
+              <Smartphone size={14} />
+              <div className='demo-signal-body'>
+                <strong>Buyer mode</strong>
+                <span>Mobile-safe controls</span>
+              </div>
+            </div>
+            <div className='demo-signal'>
+              <span className='demo-signal-pulse' aria-hidden='true'><span /></span>
+              <ShieldCheck size={14} />
+              <div className='demo-signal-body'>
+                <strong>Published-ready</strong>
+                <span>Stable iframe URL</span>
+              </div>
+            </div>
+          </div>
+          <div className={`demo-frame-wrap ${demoReady ? 'is-ready' : ''}`} aria-label='Interactive 3D car demo'>
+            <div className='demo-frame-topbar'>
+              <span><i /> Live Fortuner demo</span>
+              <span>Interactive showroom</span>
+            </div>
+            <iframe
+              src='/frame/demo'
+              title='AutoZ live car viewer'
+              allow='accelerometer; ambient-light-sensor; encrypted-media; gyroscope; xr-spatial-tracking'
+              allowFullScreen
+            />
+            <div className='demo-frame-overlay' aria-hidden={demoReady}>
+              <div className='demo-frame-sheen' />
+              <div className='demo-frame-glow' />
+              <div className='demo-frame-spinner' />
+            </div>
           </div>
         </div>
       </section>
@@ -155,17 +230,23 @@ export default function LandingPage() {
         ))}
       </section>
 
-      <section className='landing-section'>
-        <div className='landing-section-head'>
-          <span>Who it is for</span>
-          <h2>Built for the whole team, not just the 3D engineer.</h2>
+      <section className='landing-section landing-team'>
+        <div className='landing-section-head landing-section-head--centered'>
+          <span>How the team plays</span>
+          <h2>One canvas. <em>Six handoffs.</em> Zero waiting.</h2>
+          <p className='landing-section-lead'>Built for the whole team, not just the 3D engineer — every role gets a clean handoff with their own slice of the editor.</p>
         </div>
-        <div className='landing-audience-grid'>
-          {AUDIENCES.map(([label, title, body]) => (
-            <article key={label} className='landing-card'>
-              <span>{label}</span>
-              <h3>{title}</h3>
-              <p>{body}</p>
+        <div className='team-track'>
+          {TEAM_FLOW.map((step, i) => (
+            <article key={step.num} className='team-step' style={{ '--i': i }}>
+              <div className='team-step-num'>{step.num}</div>
+              <div className='team-step-icon'><step.icon size={20} strokeWidth={2.2} /></div>
+              <span className='team-step-role'>{step.role}</span>
+              <h3>{step.action}</h3>
+              <div className='team-step-out'>
+                <ArrowRight size={11} aria-hidden='true' />
+                <span>{step.outcome}</span>
+              </div>
             </article>
           ))}
         </div>
@@ -200,23 +281,33 @@ export default function LandingPage() {
         </div>
       </section>
 
-      <section className='landing-section'>
-        <div className='landing-section-head'>
+      <section className='landing-section landing-section--time'>
+        <div className='landing-section-head landing-section-head--centered'>
           <span>The time cost breakdown</span>
-          <h2>From 10 weeks to 10 minutes.</h2>
+          <h2>From <em>10 weeks</em> to <em>10 minutes</em>.</h2>
+          <p className='landing-section-lead'>Every step of the bespoke 3D viewer pipeline, collapsed into the AutoZ editor.</p>
         </div>
         <div className='landing-table'>
           <div className='landing-table-row landing-table-head'>
-            <span>Task</span><span>Before</span><span>AutoZ</span>
+            <span>Task</span>
+            <span><Clock size={12} /> Custom build</span>
+            <span><Zap size={12} /> AutoZ</span>
           </div>
           {TIME_ROWS.map(([task, before, autoz]) => (
             <div key={task} className='landing-table-row'>
-              <span>{task}</span><span>{before}</span><span>{autoz}</span>
+              <span className='landing-table-task'>{task}</span>
+              <span className='landing-table-before'>{before}</span>
+              <span className='landing-table-after'>{autoz}</span>
             </div>
           ))}
-          <div className='landing-saving'>
+        </div>
+        <div className='landing-saving'>
+          <div className='landing-saving-copy'>
             <span>Typical cost saving per vehicle</span>
-            <strong>$35,000 - $55,000</strong>
+            <strong>$35,000 — $55,000</strong>
+          </div>
+          <div className='landing-saving-meta'>
+            <Zap size={14} /> Across detection, animation, materials, cameras, and publish.
           </div>
         </div>
       </section>

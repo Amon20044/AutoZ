@@ -3,7 +3,7 @@
 import { Component, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Canvas, useFrame, useThree } from '@react-three/fiber'
 import {
-  OrbitControls, PerspectiveCamera, AdaptiveDpr, useGLTF,
+  OrbitControls, PerspectiveCamera, useGLTF,
 } from '@react-three/drei'
 import { KTX2Loader } from 'three/examples/jsm/loaders/KTX2Loader.js'
 import * as THREE from 'three'
@@ -22,7 +22,7 @@ import {
 } from '@/lib/model/chunked-model'
 import { orbitTargetFromImport } from '@/lib/scene/orbit-target'
 import { installThreeConsoleFilter } from '@/lib/three/console-filter'
-import { useDeviceProfile } from '@/hooks/useDeviceProfile'
+import { getDeviceProfile, useDeviceProfile } from '@/hooks/useDeviceProfile'
 import { computeFrameCameraPreset, FRAME_CAMERA_MODES } from '@/engine/math/camera'
 import { dampVec3, stableDelta } from '@/engine/math/animation'
 import { pickDeviceLod } from '@/lib/assets/lod-manifest'
@@ -60,6 +60,12 @@ function attachContextRecovery(renderer, label, onStatus) {
  * @param {{ snapshot: object }} props
  */
 export default function FrameCanvas({ snapshot }) {
+  // Locked once at mount: device-tier decisions for renderer + post-processing.
+  // Why: re-deriving these from runtime FPS causes PostProcessing / DPR to flip
+  // mid-session (especially during LOD swaps), which tears down render targets
+  // and produces the visible "glitch" during preview. The whole point of this
+  // memo is that nothing in the dependency array is allowed to change.
+  const deviceCaps = useMemo(() => getDeviceProfile(null, 0), [])
   const fog = snapshot.fog ?? {}
   const cam = snapshot.camera ?? {}
   const post = snapshot.postprocessing ?? {}
@@ -214,15 +220,15 @@ export default function FrameCanvas({ snapshot }) {
       <Canvas
         shadows={{ type: THREE.PCFShadowMap }}
         gl={{
-          antialias: !performanceRegressed,
+          antialias: deviceCaps.gpuTier !== 'low',
           toneMapping: THREE.AgXToneMapping,
           toneMappingExposure: post.exposure ?? 1.1,
           outputColorSpace: THREE.SRGBColorSpace,
-          powerPreference: 'high-performance',
+          powerPreference: deviceCaps.deviceClass === 'mobile' ? 'default' : 'high-performance',
           preserveDrawingBuffer: false,
           failIfMajorPerformanceCaveat: false,
         }}
-        dpr={[1, performanceRegressed ? 1 : 1.75]}
+        dpr={[1, deviceCaps.maxDpr]}
         style={{ background: backgroundColor, width: '100%', height: '100%' }}
         onCreated={({ gl }) => attachContextRecovery(gl, 'FrameCanvas', handleWebglStatus)}
       >
@@ -270,7 +276,6 @@ export default function FrameCanvas({ snapshot }) {
           cameraSettings={snapshot.camera?.frame}
         />
 
-        <AdaptiveDpr />
         <StudioStage environment={environment} stage={runtimeStage} fog={fog} />
 
         <FrameLoadBoundary onError={setModelLoadError}>
@@ -300,7 +305,9 @@ export default function FrameCanvas({ snapshot }) {
           }}
         />
 
-        {post.enabled !== false && !performanceRegressed && <PostProcessing config={post} />}
+        {post.enabled !== false && deviceCaps.allowPostprocessing && (
+          <PostProcessing config={post} tier={deviceCaps.gpuTier} deviceClass={deviceCaps.deviceClass} />
+        )}
       </Canvas>
 
       {fpsSample.fps !== null && (
@@ -325,21 +332,6 @@ export default function FrameCanvas({ snapshot }) {
       {!modelReady && snapshot.model?.url && !modelLoadError && webglStatus !== 'lost' && (
         <div className='frame-loading'>
           <div className='az-spinner' />
-          <div>{modelLoadProgress?.statusText || 'Loading model'}</div>
-          {modelLoadProgress && (
-            <div className='frame-load-progress'>
-              <div className='frame-load-progress-row'>
-                <span>{modelLoadProgress.completedParts ?? 0} / {modelLoadProgress.totalParts ?? 0} parts</span>
-                <strong>{modelLoadProgress.percent ?? 0}%</strong>
-              </div>
-              <div className='az-progress-bar'>
-                <span style={{ width: `${Math.max(0, Math.min(100, modelLoadProgress.percent ?? 0))}%` }} />
-              </div>
-              {modelLoadProgress.cachedParts ? (
-                <div className='frame-load-progress-meta'>{modelLoadProgress.cachedParts} cached</div>
-              ) : null}
-            </div>
-          )}
         </div>
       )}
 

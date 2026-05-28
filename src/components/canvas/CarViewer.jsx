@@ -2,7 +2,7 @@
 
 import { Suspense, useEffect, useMemo, useRef, useState } from 'react'
 import { Canvas, useFrame, useThree } from '@react-three/fiber'
-import { AdaptiveDpr, OrbitControls, PerspectiveCamera, Preload } from '@react-three/drei'
+import { OrbitControls, PerspectiveCamera, Preload } from '@react-three/drei'
 import * as THREE from 'three'
 
 import StudioStage from './StudioStage'
@@ -15,6 +15,7 @@ import { installThreeConsoleFilter } from '@/lib/three/console-filter'
 import { orbitTargetFromImport } from '@/lib/scene/orbit-target'
 import { computeFrameCameraPreset } from '@/engine/math/camera'
 import { dampVec3, stableDelta } from '@/engine/math/animation'
+import { getDeviceProfile } from '@/hooks/useDeviceProfile'
 
 installThreeConsoleFilter()
 
@@ -46,6 +47,8 @@ export default function CarViewer({
   showPartLabels = true,
   activePartId = null,
 }) {
+  // Locked once at mount — see FrameCanvas for the why.
+  const deviceCaps = useMemo(() => getDeviceProfile(null, 0), [])
   const parts = registry?.enabledInteractive ?? []
   const env = sceneConfig.environment ?? { preset: 'studio', background: false }
   const lighting = sceneConfig.lighting ?? {}
@@ -104,16 +107,16 @@ export default function CarViewer({
       <Canvas
         shadows={{ type: THREE.PCFShadowMap }}
         gl={{
-          antialias: true,
+          antialias: deviceCaps.gpuTier !== 'low',
           alpha: false,
-          powerPreference: 'high-performance',
+          powerPreference: deviceCaps.deviceClass === 'mobile' ? 'default' : 'high-performance',
           toneMapping: THREE.AgXToneMapping,
           toneMappingExposure: post.exposure ?? 1.1,
           outputColorSpace: THREE.SRGBColorSpace,
           preserveDrawingBuffer: false,
           failIfMajorPerformanceCaveat: false,
         }}
-        dpr={[1, 2]}
+        dpr={[1, deviceCaps.maxDpr]}
         style={{ background: backgroundColor }}
         onCreated={({ gl }) => attachContextRecovery(gl, 'CarViewer')}
       >
@@ -158,7 +161,6 @@ export default function CarViewer({
           cameraSettings={cam.frame}
         />
 
-        <AdaptiveDpr />
         <RendererSettings exposure={post.exposure ?? 1.1} />
         <StudioStage environment={env} stage={stage} fog={fog} />
 
@@ -186,7 +188,9 @@ export default function CarViewer({
         </Suspense>
 
         <Preload all />
-        {post.enabled !== false && <PostProcessing config={post} />}
+        {post.enabled !== false && deviceCaps.allowPostprocessing && (
+          <PostProcessing config={post} tier={deviceCaps.gpuTier} deviceClass={deviceCaps.deviceClass} />
+        )}
       </Canvas>
       </div>
 
