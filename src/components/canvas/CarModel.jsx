@@ -46,29 +46,9 @@ export default function CarModel({
     }
   })
 
-  // Click handler — raycast to find clicked part
-  const handleClick = (e) => {
-    e.stopPropagation()
-    if (!registry) return
-
-    const mesh = e.object
-    // Walk up to find the mesh if we hit a child
-    let target = mesh
-    while (target && !target.isMesh) target = target.parent
-
-    if (!target?.isMesh) return
-
-    // Find which part owns this mesh
-    for (const part of registry.enabledInteractive ?? registry.interactive) {
-      const owns = part.meshObjects.some((m) => m === target || m.uuid === target.uuid)
-      if (owns) {
-        onPartClick?.(part)
-        return
-      }
-    }
-  }
-
+  // Part picking is handled by ImperativeMeshPicker (tap-vs-drag aware), so the
+  // model group itself intentionally has no click handler.
   return (
-    <group ref={groupRef} onClick={handleClick} />
+    <group ref={groupRef} />
   )
 }

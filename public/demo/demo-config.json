@@ -1314,7 +1314,7 @@
         "hinge_open_close"
       ],
       "visibleInUI": true,
-      "animationEnabled": true,
+      "animationEnabled": false,
       "material": null
     },
     {
@@ -1385,12 +1385,12 @@
       ],
       "pivot": [
         0.41336262433432586,
-        1.8607990385214332,
+        1.9607990385214333,
         -2.449720464814569
       ],
       "pivotOffset": [
         0,
-        0.35,
+        0.45,
         0.28
       ],
       "pivotSource": "offset",
@@ -1409,7 +1409,7 @@
         2.184515939807854,
         -2.630251513179629
       ],
-      "openAngle": 50,
+      "openAngle": 80,
       "closeAngle": 0,
       "lambda": 8,
       "spinSpeed": 5.5,
@@ -1734,5 +1734,5 @@
       "material": null
     }
   ],
-  "publishedAt": "2026-05-27T22:28:14.440Z"
+  "publishedAt": "2026-05-28T11:21:33.809Z"
 }
